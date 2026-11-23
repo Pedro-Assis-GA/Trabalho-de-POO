@@ -36,10 +36,10 @@ export class Produto implements EntidadeIdentificavel<string> {
         if (!descricaoProduto || descricaoProduto.trim() === "") {
             throw new Error("A descrição do produto é obrigatória.");
         }
-        if (precoVenda < 0 || custoProduto < 0) {
+        if ((!Number.isFinite(precoVenda) || precoVenda < 0) || (!Number.isFinite(custoProduto) || custoProduto < 0)) {
             throw new Error("Preço de venda e custo não podem ser negativos.");
         }
-        if (qtdEstoque < 0 || estoqueMinimo < 0) {
+        if ((!Number.isFinite(qtdEstoque) || qtdEstoque < 0) || (!Number.isFinite(estoqueMinimo) || estoqueMinimo < 0)) {
             throw new Error("Quantidade de estoque e estoque mínimo não podem ser negativos.");
         }
 
@@ -79,7 +79,7 @@ export class Produto implements EntidadeIdentificavel<string> {
     }
 
     public setPrecoVenda(novoPreco: number): void {
-        if (novoPreco < 0) {
+        if ((!Number.isFinite(novoPreco) || novoPreco < 0)) {
             throw new Error("O preço de venda não pode ser negativo.");
         }
         this.precoVenda = novoPreco;
@@ -90,7 +90,7 @@ export class Produto implements EntidadeIdentificavel<string> {
     }
 
     public setCustoProduto(novoCusto: number): void {
-        if (novoCusto < 0) {
+        if ((!Number.isFinite(novoCusto) || novoCusto < 0)) {
             throw new Error("O custo do produto não pode ser negativo.");
         }
         this.custoProduto = novoCusto;
@@ -109,7 +109,7 @@ export class Produto implements EntidadeIdentificavel<string> {
     }
 
     public setEstoqueMinimo(minimo: number): void {
-        if (minimo < 0) {
+        if ((!Number.isFinite(minimo) || minimo < 0)) {
             throw new Error("O estoque mínimo não pode ser negativo.");
         }
         this.estoqueMinimo = minimo;
@@ -149,14 +149,14 @@ export class Produto implements EntidadeIdentificavel<string> {
     }
 
     public adicionarEstoque(quantidade: number): void {
-        if (quantidade <= 0) {
+        if ((!Number.isFinite(quantidade) || quantidade <= 0)) {
             throw new Error("A quantidade de entrada no estoque deve ser maior que zero.");
         }
         this.qtdEstoque = Number((this.qtdEstoque + quantidade).toFixed(3));
     }
 
     public removerEstoque(quantidade: number): void {
-        if (quantidade <= 0) {
+        if ((!Number.isFinite(quantidade) || quantidade <= 0)) {
             throw new Error("A quantidade de saída do estoque deve ser maior que zero.");
         }
         if (quantidade > this.qtdEstoque) {
@@ -168,7 +168,7 @@ export class Produto implements EntidadeIdentificavel<string> {
     }
 
     public definirEstoquePorAjuste(novaQuantidade: number): void {
-        if (novaQuantidade < 0) {
+        if ((!Number.isFinite(novaQuantidade) || novaQuantidade < 0)) {
             throw new Error("A quantidade em estoque após ajuste não pode ser negativa.");
         }
         this.qtdEstoque = Number(novaQuantidade.toFixed(3));
@@ -191,7 +191,7 @@ export class MovimentacaoEstoque implements EntidadeIdentificavel<number> {
         produto: Produto,
         funcionarioResponsavel: Funcionario
     ) {
-        if (qtdMovimentacao <= 0) {
+        if (!Number.isFinite(qtdMovimentacao) || qtdMovimentacao < 0 || (qtdMovimentacao === 0 && tipo !== TipoMovimentacao.AJUSTE)) {
             throw new Error("A quantidade movimentada deve ser maior que zero.");
         }
         this.idMovimentacao = idMovimentacao;
@@ -247,10 +247,10 @@ export class ItemCompra {
         qtdCompra: number,
         custoUnitario: number
     ) {
-        if (qtdCompra <= 0) {
+        if ((!Number.isFinite(qtdCompra) || qtdCompra <= 0)) {
             throw new Error("A quantidade comprada deve ser maior que zero.");
         }
-        if (custoUnitario < 0) {
+        if ((!Number.isFinite(custoUnitario) || custoUnitario < 0)) {
             throw new Error("O custo unitário não pode ser negativo.");
         }
         this.idCompra = idCompra;

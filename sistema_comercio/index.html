@@ -10,7 +10,7 @@
     <!-- BARRA SUPERIOR -->
     <header class="topbar">
         <div class="topbar-brand">
-            <h1>Sistema de Gerenciamento Comercial — POO TypeScript</h1>
+            <h1>Gestão Comercial</h1>
             <p>Gestão Integrada de Caixa, Estoque, Compras e Funcionários</p>
         </div>
         <div class="topbar-controls">
@@ -26,7 +26,8 @@
     </header>
 
     <!-- NAVEGAÇÃO DE MÓDULOS -->
-    <nav class="nav-tabs">
+    <div class="preview-notice"><span class="status-dot"></span> Preview local <span>Dados de demonstração salvos neste navegador. Use apenas dados fictícios.</span></div>
+    <nav class="nav-tabs" aria-label="Módulos do sistema">
         <button type="button" class="nav-btn active" data-tab="dashboard">1. Visão Geral & Alertas</button>
         <button type="button" class="nav-btn" data-tab="pdv">2. Frente de Caixa (PDV)</button>
         <button type="button" class="nav-btn" data-tab="estoque">3. Estoque & Produtos</button>
@@ -376,6 +377,11 @@
 
             <div class="card">
                 <h2>Catálogo Completo de Produtos no Estoque</h2>
+                <div class="catalogo-filtros">
+                    <div class="form-group"><label for="busca-produtos">Buscar produto, código ou categoria</label><input type="search" id="busca-produtos" placeholder="Ex.: arroz, 789100 ou laticínios" /></div>
+                    <div class="form-group"><label for="filtro-produtos">Situação do estoque</label><select id="filtro-produtos"><option value="todos">Todos os produtos</option><option value="baixo">Estoque baixo</option><option value="vencido">Vencidos</option></select></div>
+                    <p id="contador-produtos" role="status"></p>
+                </div>
                 <div class="table-wrapper">
                     <table>
                         <thead>
@@ -597,7 +603,7 @@
         </section>
     </main>
 
-    <div id="toast-container"></div>
+    <div id="toast-container" role="status" aria-live="polite" aria-atomic="false"></div>
 
     <script src="dist/app.bundle.js"></script>
 </body>

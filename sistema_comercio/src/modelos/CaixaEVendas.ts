@@ -25,7 +25,7 @@ export class SessaoCaixa implements EntidadeIdentificavel<number> {
         funcionario: Funcionario,
         caixa: Caixa
     ) {
-        if (valorInicial < 0) {
+        if ((!Number.isFinite(valorInicial) || valorInicial < 0)) {
             throw new Error("O valor inicial da sessão de caixa não pode ser negativo.");
         }
         this.idSessao = idSessao;
@@ -100,6 +100,9 @@ export class SessaoCaixa implements EntidadeIdentificavel<number> {
         if (!this.estaAberta()) {
             throw new Error("Esta sessão de caixa já foi fechada.");
         }
+        if (valorFinalConferido !== undefined && (!Number.isFinite(valorFinalConferido) || valorFinalConferido < 0)) {
+            throw new Error("O valor conferido deve ser um número finito não negativo.");
+        }
         this.dataFechamento = dataFechamento;
         const saldoCalculado = this.calcularSaldoEsperado();
         this.valorFinal = valorFinalConferido !== undefined
@@ -132,11 +135,11 @@ export class ItemVenda {
         qtdVenda: number,
         precoUnitario?: number
     ) {
-        if (qtdVenda <= 0) {
+        if ((!Number.isFinite(qtdVenda) || qtdVenda <= 0)) {
             throw new Error("A quantidade vendida deve ser maior que zero.");
         }
         const preco = precoUnitario !== undefined ? precoUnitario : produto.getPrecoVenda();
-        if (preco < 0) {
+        if ((!Number.isFinite(preco) || preco < 0)) {
             throw new Error("O preço unitário não pode ser negativo.");
         }
         this.idVenda = idVenda;
@@ -162,7 +165,7 @@ export class ItemVenda {
     }
 
     public setQtdVenda(novaQtd: number): void {
-        if (novaQtd <= 0) {
+        if ((!Number.isFinite(novaQtd) || novaQtd <= 0)) {
             throw new Error("A quantidade deve ser maior que zero.");
         }
         this.qtdVenda = novaQtd;
@@ -183,7 +186,7 @@ export class PagamentoVenda {
     private valorPago: number;
 
     constructor(idVenda: number, formaPagamento: FormaPagamento, valorPago: number) {
-        if (valorPago <= 0) {
+        if ((!Number.isFinite(valorPago) || valorPago <= 0)) {
             throw new Error("O valor pago deve ser maior que zero.");
         }
         this.idVenda = idVenda;
@@ -266,6 +269,9 @@ export class Venda implements EntidadeIdentificavel<number> {
     }
 
     public adicionarItem(produto: Produto, qtdVenda: number, precoUnitario?: number): void {
+        if (!Number.isFinite(qtdVenda) || qtdVenda <= 0) {
+            throw new Error("A quantidade vendida deve ser um número finito maior que zero.");
+        }
         const existente = this.itens.find(
             (i) => i.getCodigoBarras() === produto.getCodigoBarras()
         );

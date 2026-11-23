@@ -43,7 +43,7 @@ class Cargo {
         if (!nomeCargo || nomeCargo.trim() === "") {
             throw new Error("O nome do cargo é obrigatório.");
         }
-        if (salarioBase < 0) {
+        if ((!Number.isFinite(salarioBase) || salarioBase < 0)) {
             throw new Error("O salário base não pode ser negativo.");
         }
         this.idCargo = idCargo;
@@ -69,7 +69,7 @@ class Cargo {
         return this.salarioBase;
     }
     setSalarioBase(salario) {
-        if (salario < 0) {
+        if ((!Number.isFinite(salario) || salario < 0)) {
             throw new Error("O salário base não pode ser negativo.");
         }
         this.salarioBase = salario;
@@ -218,7 +218,7 @@ class FormaPagamento {
 }
 class Caixa {
     constructor(idCaixa, numeroCaixa, statusCaixa = StatusCaixa.LIVRE) {
-        if (numeroCaixa <= 0) {
+        if ((!Number.isFinite(numeroCaixa) || numeroCaixa <= 0)) {
             throw new Error("O número do caixa deve ser maior que zero.");
         }
         this.idCaixa = idCaixa;
@@ -244,6 +244,7 @@ class Caixa {
 
 
 // --- EstoqueECompras.js ---
+
 class Produto {
     constructor(codigoBarras, descricaoProduto, precoVenda, custoProduto, unidadeMedida, qtdEstoque, estoqueMinimo, categoria, dataValidade, fornecedores = []) {
         this.fornecedores = [];
@@ -253,10 +254,10 @@ class Produto {
         if (!descricaoProduto || descricaoProduto.trim() === "") {
             throw new Error("A descrição do produto é obrigatória.");
         }
-        if (precoVenda < 0 || custoProduto < 0) {
+        if ((!Number.isFinite(precoVenda) || precoVenda < 0) || (!Number.isFinite(custoProduto) || custoProduto < 0)) {
             throw new Error("Preço de venda e custo não podem ser negativos.");
         }
-        if (qtdEstoque < 0 || estoqueMinimo < 0) {
+        if ((!Number.isFinite(qtdEstoque) || qtdEstoque < 0) || (!Number.isFinite(estoqueMinimo) || estoqueMinimo < 0)) {
             throw new Error("Quantidade de estoque e estoque mínimo não podem ser negativos.");
         }
         this.codigoBarras = codigoBarras.trim();
@@ -289,7 +290,7 @@ class Produto {
         return this.precoVenda;
     }
     setPrecoVenda(novoPreco) {
-        if (novoPreco < 0) {
+        if ((!Number.isFinite(novoPreco) || novoPreco < 0)) {
             throw new Error("O preço de venda não pode ser negativo.");
         }
         this.precoVenda = novoPreco;
@@ -298,7 +299,7 @@ class Produto {
         return this.custoProduto;
     }
     setCustoProduto(novoCusto) {
-        if (novoCusto < 0) {
+        if ((!Number.isFinite(novoCusto) || novoCusto < 0)) {
             throw new Error("O custo do produto não pode ser negativo.");
         }
         this.custoProduto = novoCusto;
@@ -313,7 +314,7 @@ class Produto {
         return this.estoqueMinimo;
     }
     setEstoqueMinimo(minimo) {
-        if (minimo < 0) {
+        if ((!Number.isFinite(minimo) || minimo < 0)) {
             throw new Error("O estoque mínimo não pode ser negativo.");
         }
         this.estoqueMinimo = minimo;
@@ -344,13 +345,13 @@ class Produto {
         return validade.getTime() < dataReferencia.getTime();
     }
     adicionarEstoque(quantidade) {
-        if (quantidade <= 0) {
+        if ((!Number.isFinite(quantidade) || quantidade <= 0)) {
             throw new Error("A quantidade de entrada no estoque deve ser maior que zero.");
         }
         this.qtdEstoque = Number((this.qtdEstoque + quantidade).toFixed(3));
     }
     removerEstoque(quantidade) {
-        if (quantidade <= 0) {
+        if ((!Number.isFinite(quantidade) || quantidade <= 0)) {
             throw new Error("A quantidade de saída do estoque deve ser maior que zero.");
         }
         if (quantidade > this.qtdEstoque) {
@@ -359,7 +360,7 @@ class Produto {
         this.qtdEstoque = Number((this.qtdEstoque - quantidade).toFixed(3));
     }
     definirEstoquePorAjuste(novaQuantidade) {
-        if (novaQuantidade < 0) {
+        if ((!Number.isFinite(novaQuantidade) || novaQuantidade < 0)) {
             throw new Error("A quantidade em estoque após ajuste não pode ser negativa.");
         }
         this.qtdEstoque = Number(novaQuantidade.toFixed(3));
@@ -367,7 +368,7 @@ class Produto {
 }
 class MovimentacaoEstoque {
     constructor(idMovimentacao, dataHoraMov, tipo, qtdMovimentacao, produto, funcionarioResponsavel) {
-        if (qtdMovimentacao <= 0) {
+        if (!Number.isFinite(qtdMovimentacao) || qtdMovimentacao < 0 || (qtdMovimentacao === 0 && tipo !== TipoMovimentacao.AJUSTE)) {
             throw new Error("A quantidade movimentada deve ser maior que zero.");
         }
         this.idMovimentacao = idMovimentacao;
@@ -404,10 +405,10 @@ class MovimentacaoEstoque {
 }
 class ItemCompra {
     constructor(idCompra, produto, qtdCompra, custoUnitario) {
-        if (qtdCompra <= 0) {
+        if ((!Number.isFinite(qtdCompra) || qtdCompra <= 0)) {
             throw new Error("A quantidade comprada deve ser maior que zero.");
         }
-        if (custoUnitario < 0) {
+        if ((!Number.isFinite(custoUnitario) || custoUnitario < 0)) {
             throw new Error("O custo unitário não pode ser negativo.");
         }
         this.idCompra = idCompra;
@@ -481,7 +482,7 @@ class Compra {
 class SessaoCaixa {
     constructor(idSessao, dataAbertura, valorInicial, funcionario, caixa) {
         this.vendas = [];
-        if (valorInicial < 0) {
+        if ((!Number.isFinite(valorInicial) || valorInicial < 0)) {
             throw new Error("O valor inicial da sessão de caixa não pode ser negativo.");
         }
         this.idSessao = idSessao;
@@ -541,6 +542,9 @@ class SessaoCaixa {
         if (!this.estaAberta()) {
             throw new Error("Esta sessão de caixa já foi fechada.");
         }
+        if (valorFinalConferido !== undefined && (!Number.isFinite(valorFinalConferido) || valorFinalConferido < 0)) {
+            throw new Error("O valor conferido deve ser um número finito não negativo.");
+        }
         this.dataFechamento = dataFechamento;
         const saldoCalculado = this.calcularSaldoEsperado();
         this.valorFinal = valorFinalConferido !== undefined
@@ -562,11 +566,11 @@ class SessaoCaixa {
 }
 class ItemVenda {
     constructor(idVenda, produto, qtdVenda, precoUnitario) {
-        if (qtdVenda <= 0) {
+        if ((!Number.isFinite(qtdVenda) || qtdVenda <= 0)) {
             throw new Error("A quantidade vendida deve ser maior que zero.");
         }
         const preco = precoUnitario !== undefined ? precoUnitario : produto.getPrecoVenda();
-        if (preco < 0) {
+        if ((!Number.isFinite(preco) || preco < 0)) {
             throw new Error("O preço unitário não pode ser negativo.");
         }
         this.idVenda = idVenda;
@@ -587,7 +591,7 @@ class ItemVenda {
         return this.qtdVenda;
     }
     setQtdVenda(novaQtd) {
-        if (novaQtd <= 0) {
+        if ((!Number.isFinite(novaQtd) || novaQtd <= 0)) {
             throw new Error("A quantidade deve ser maior que zero.");
         }
         this.qtdVenda = novaQtd;
@@ -601,7 +605,7 @@ class ItemVenda {
 }
 class PagamentoVenda {
     constructor(idVenda, formaPagamento, valorPago) {
-        if (valorPago <= 0) {
+        if ((!Number.isFinite(valorPago) || valorPago <= 0)) {
             throw new Error("O valor pago deve ser maior que zero.");
         }
         this.idVenda = idVenda;
@@ -659,6 +663,9 @@ class Venda {
         return [...this.pagamentos];
     }
     adicionarItem(produto, qtdVenda, precoUnitario) {
+        if (!Number.isFinite(qtdVenda) || qtdVenda <= 0) {
+            throw new Error("A quantidade vendida deve ser um número finito maior que zero.");
+        }
         const existente = this.itens.find((i) => i.getCodigoBarras() === produto.getCodigoBarras());
         if (existente) {
             const novaQtd = Number((existente.getQtdVenda() + qtdVenda).toFixed(3));
@@ -739,8 +746,7 @@ class GerenciadorSistema {
         if (carregarDadosPadrao) {
             const carregouDoStorage = this.carregarEstado();
             if (!carregouDoStorage) {
-                this.popularDadosIniciais();
-                this.salvarEstado();
+                this.resetarDadosParaPadrao();
             }
         }
     }
@@ -903,6 +909,9 @@ class GerenciadorSistema {
         return this.produtos.filter((p) => p.estaVencido());
     }
     realizarAjusteEstoque(codigoBarras, tipo, quantidade, idFuncionario) {
+        if (!Object.values(TipoMovimentacao).includes(tipo) || !Number.isFinite(quantidade)) {
+            throw new Error("Tipo de movimentação ou quantidade inválida.");
+        }
         const produto = this.buscarProdutoPorCodigo(codigoBarras);
         const funcionario = this.buscarFuncionarioPorId(idFuncionario);
         if (tipo === TipoMovimentacao.ENTRADA) {
@@ -914,7 +923,7 @@ class GerenciadorSistema {
         else if (tipo === TipoMovimentacao.AJUSTE) {
             produto.definirEstoquePorAjuste(quantidade);
         }
-        const mov = this.registrarMovimentacaoInterna(tipo, quantidade > 0 ? quantidade : 1, produto, funcionario);
+        const mov = this.registrarMovimentacaoInterna(tipo, quantidade, produto, funcionario);
         this.notificar("ESTOQUE_MOVIMENTADO", mov);
         return mov;
     }
@@ -939,10 +948,14 @@ class GerenciadorSistema {
         for (const item of itensInput) {
             const produto = this.buscarProdutoPorCodigo(item.codigoBarras);
             compra.adicionarItem(produto, item.qtdCompra, item.custoUnitario);
-            produto.adicionarEstoque(item.qtdCompra);
-            produto.setCustoProduto(item.custoUnitario);
+        }
+        // Valide toda a nota antes de alterar estoque, custos e rastreabilidade.
+        for (const item of compra.getItens()) {
+            const produto = item.getProduto();
+            produto.adicionarEstoque(item.getQtdCompra());
+            produto.setCustoProduto(item.getCustoUnitario());
             produto.vincularFornecedor(fornecedor);
-            this.registrarMovimentacaoInterna(TipoMovimentacao.ENTRADA, item.qtdCompra, produto, funcionario);
+            this.registrarMovimentacaoInterna(TipoMovimentacao.ENTRADA, item.getQtdCompra(), produto, funcionario);
         }
         this.compras.unshift(compra);
         this.notificar("COMPRA_REGISTRADA", compra);
@@ -1077,6 +1090,7 @@ class GerenciadorSistema {
         this.clientes = [];
         this.formasPagamento = [];
         this.vendas = [];
+        this.funcionarioLogado = null;
         this.popularDadosIniciais();
         this.notificar("SISTEMA_RESETADO");
     }
@@ -1139,6 +1153,7 @@ class GerenciadorSistema {
         }
         try {
             const payload = {
+                funcionarioAtivoId: this.funcionarioLogado?.getIdFuncionario(),
                 categorias: this.categorias.map((c) => ({
                     idCategoria: c.getIdCategoria(),
                     nomeCategoria: c.getNomeCategoria()
@@ -1253,7 +1268,7 @@ class GerenciadorSistema {
             this.categorias = dados.categorias.map((c) => new Categoria(c.idCategoria, c.nomeCategoria));
             this.cargos = dados.cargos.map((c) => new Cargo(c.idCargo, c.nomeCargo, c.salarioBase));
             this.funcionarios = dados.funcionarios.map((f) => new Funcionario(f.idFuncionario, f.cpfFuncionario, f.nomeFuncionario, f.senha, f.dataAdmissao, this.buscarCargoPorId(f.idCargo), f.telefones));
-            this.funcionarioLogado = this.funcionarios[0] || null;
+            this.funcionarioLogado = this.funcionarios.find(f => f.getIdFuncionario() === dados.funcionarioAtivoId) || this.funcionarios[0] || null;
             this.fornecedores = dados.fornecedores.map((f) => new Fornecedor(f.idFornecedor, f.cnpj, f.razaoSocial, f.email, f.telefones));
             this.produtos = dados.produtos.map((p) => new Produto(p.codigoBarras, p.descricaoProduto, p.precoVenda, p.custoProduto, p.unidadeMedida, p.qtdEstoque, p.estoqueMinimo, this.buscarCategoriaPorId(p.idCategoria), p.dataValidade, (p.idsFornecedores || []).map((id) => this.buscarFornecedorPorId(id))));
             this.caixas = dados.caixas.map((c) => new Caixa(c.idCaixa, c.numeroCaixa, c.statusCaixa));
@@ -1285,6 +1300,12 @@ class GerenciadorSistema {
                 sessao.restaurarVenda(venda);
                 return venda;
             });
+            // A ordem histórica de sessões não pode sobrescrever o estado atual do caixa.
+            for (const caixa of this.caixas) {
+                const ocupada = this.sessoesCaixa.some(s => s.estaAberta() && s.getCaixa() === caixa);
+                if (ocupada)
+                    caixa.setStatusCaixa(StatusCaixa.OCUPADO);
+            }
             return true;
         }
         catch {
@@ -1297,11 +1318,18 @@ class GerenciadorSistema {
 // --- ControladorInterface.js ---
 
 class ControladorInterface {
+    escaparHTML(valor) {
+        return String(valor ?? "").replace(/[&<>"']/g, caractere => ({
+            "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+        }[caractere]));
+    }
     constructor(sistema) {
         this.carrinhoVenda = [];
         this.pagamentosVenda = [];
         this.itensNovaCompra = [];
         this.funcionarioRastreioId = 1;
+        this.buscaProdutos = "";
+        this.filtroProdutos = "todos";
         this.sistema = sistema;
         this.sistema.adicionarObservador(this);
     }
@@ -1346,6 +1374,7 @@ class ControladorInterface {
                     return;
                 botoes.forEach((b) => b.classList.remove("active"));
                 btn.classList.add("active");
+                botoes.forEach(b => b.setAttribute("aria-current", b === btn ? "page" : "false"));
                 document.querySelectorAll(".tab-section").forEach((sec) => {
                     sec.classList.toggle("active", sec.id === `tab-${alvo}`);
                 });
@@ -1366,6 +1395,8 @@ class ControladorInterface {
         });
         const btnReset = document.getElementById("btn-resetar-dados");
         btnReset?.addEventListener("click", () => {
+            if (!window.confirm("Restaurar a demonstração? Cadastros, vendas e compras salvos neste navegador serão substituídos."))
+                return;
             this.carrinhoVenda = [];
             this.pagamentosVenda = [];
             this.itensNovaCompra = [];
@@ -1516,6 +1547,14 @@ class ControladorInterface {
     }
     // ==================== EVENTOS DE ESTOQUE E PRODUTOS ====================
     configurarEventosEstoque() {
+        document.getElementById("busca-produtos")?.addEventListener("input", evento => {
+            this.buscaProdutos = evento.target.value;
+            this.renderizarEstoque();
+        });
+        document.getElementById("filtro-produtos")?.addEventListener("change", evento => {
+            this.filtroProdutos = evento.target.value;
+            this.renderizarEstoque();
+        });
         const formCategoria = document.getElementById("form-nova-categoria");
         formCategoria?.addEventListener("submit", (ev) => {
             ev.preventDefault();
@@ -1690,10 +1729,10 @@ class ControladorInterface {
         const funcionarios = this.sistema.listarFuncionarios();
         const logado = this.sistema.getFuncionarioLogado();
         selectOperador.innerHTML = funcionarios
-            .map((f) => `<option value="${f.getIdFuncionario()}" ${logado?.getIdFuncionario() === f.getIdFuncionario() ? "selected" : ""}>${f.getNomeFuncionario()} (ID #${f.getIdFuncionario()})</option>`)
+            .map((f) => `<option value="${f.getIdFuncionario()}" ${logado?.getIdFuncionario() === f.getIdFuncionario() ? "selected" : ""}>${this.escaparHTML(f.getNomeFuncionario())} (ID #${f.getIdFuncionario()})</option>`)
             .join("");
         if (badgeCargo && logado) {
-            badgeCargo.textContent = `${logado.getCargo().getNomeCargo()}`;
+            badgeCargo.textContent = logado.getCargo().getNomeCargo();
         }
     }
     renderizarDashboard() {
@@ -1725,14 +1764,14 @@ class ControladorInterface {
                             tags.push(`<span class="badge badge-warning">Abaixo do Mínimo</span>`);
                         }
                         if (p.estaVencido()) {
-                            tags.push(`<span class="badge badge-danger">Vencido (${p.getDataValidade()})</span>`);
+                            tags.push(`<span class="badge badge-danger">Vencido (${this.escaparHTML(p.getDataValidade())})</span>`);
                         }
                         return `<tr>
-                                  <td><code>${p.getCodigoBarras()}</code></td>
-                                  <td><strong>${p.getDescricaoProduto()}</strong></td>
-                                  <td>${p.getCategoria().getNomeCategoria()}</td>
-                                  <td>${p.getQtdEstoque()} ${p.getUnidadeMedida()}</td>
-                                  <td>${p.getEstoqueMinimo()} ${p.getUnidadeMedida()}</td>
+                                  <td><code>${this.escaparHTML(p.getCodigoBarras())}</code></td>
+                                  <td><strong>${this.escaparHTML(p.getDescricaoProduto())}</strong></td>
+                                  <td>${this.escaparHTML(p.getCategoria().getNomeCategoria())}</td>
+                                  <td>${p.getQtdEstoque()} ${this.escaparHTML(p.getUnidadeMedida())}</td>
+                                  <td>${p.getEstoqueMinimo()} ${this.escaparHTML(p.getUnidadeMedida())}</td>
                                   <td>${tags.join(" ")}</td>
                               </tr>`;
                     })
@@ -1753,11 +1792,11 @@ class ControladorInterface {
                                 : "badge-info";
                         return `<tr>
                                   <td>#${m.getIdMovimentacao()}</td>
-                                  <td>${m.getDataHoraMov()}</td>
+                                  <td>${this.escaparHTML(m.getDataHoraMov())}</td>
                                   <td><span class="badge ${classeBadge}">${m.getTipo()}</span></td>
-                                  <td>${m.getProduto().getDescricaoProduto()}</td>
-                                  <td>${m.getQtdMovimentacao()} ${m.getProduto().getUnidadeMedida()}</td>
-                                  <td>${m.getFuncionarioResponsavel().getNomeFuncionario()}</td>
+                                  <td>${this.escaparHTML(m.getProduto().getDescricaoProduto())}</td>
+                                  <td>${m.getQtdMovimentacao()} ${this.escaparHTML(m.getProduto().getUnidadeMedida())}</td>
+                                  <td>${this.escaparHTML(m.getFuncionarioResponsavel().getNomeFuncionario())}</td>
                               </tr>`;
                     })
                         .join("");
@@ -1796,7 +1835,7 @@ class ControladorInterface {
             const valorAtual = selectProdVenda.value;
             selectProdVenda.innerHTML = this.sistema
                 .listarProdutos()
-                .map((p) => `<option value="${p.getCodigoBarras()}">${p.getDescricaoProduto()} — ${this.formatarMoeda(p.getPrecoVenda())} (Est: ${p.getQtdEstoque()} ${p.getUnidadeMedida()})</option>`)
+                .map((p) => `<option value="${this.escaparHTML(p.getCodigoBarras())}">${this.escaparHTML(p.getDescricaoProduto())} — ${this.formatarMoeda(p.getPrecoVenda())} (Est: ${p.getQtdEstoque()} ${this.escaparHTML(p.getUnidadeMedida())})</option>`)
                 .join("");
             if (valorAtual)
                 selectProdVenda.value = valorAtual;
@@ -1808,7 +1847,7 @@ class ControladorInterface {
                 `<option value="">Consumidor Não Identificado (Opcional)</option>` +
                     this.sistema
                         .listarClientes()
-                        .map((c) => `<option value="${c.getIdCliente()}">${c.getNomeCliente()} — CPF: ${c.getCpfCliente()}</option>`)
+                        .map((c) => `<option value="${c.getIdCliente()}">${this.escaparHTML(c.getNomeCliente())} — CPF: ${this.escaparHTML(c.getCpfCliente())}</option>`)
                         .join("");
             if (valCli)
                 selectCliente.value = valCli;
@@ -1818,7 +1857,7 @@ class ControladorInterface {
             const valForma = selectFormaPag.value;
             selectFormaPag.innerHTML = this.sistema
                 .listarFormasPagamento()
-                .map((f) => `<option value="${f.getIdForma()}">${f.getDescricao()}</option>`)
+                .map((f) => `<option value="${f.getIdForma()}">${this.escaparHTML(f.getDescricao())}</option>`)
                 .join("");
             if (valForma)
                 selectFormaPag.value = valForma;
@@ -1834,8 +1873,8 @@ class ControladorInterface {
                         const prod = this.sistema.buscarProdutoPorCodigo(item.codigoBarras);
                         const sub = prod.getPrecoVenda() * item.qtdVenda;
                         return `<tr>
-                                  <td>${prod.getDescricaoProduto()}</td>
-                                  <td>${item.qtdVenda} ${prod.getUnidadeMedida()}</td>
+                                  <td>${this.escaparHTML(prod.getDescricaoProduto())}</td>
+                                  <td>${item.qtdVenda} ${this.escaparHTML(prod.getUnidadeMedida())}</td>
                                   <td>${this.formatarMoeda(prod.getPrecoVenda())}</td>
                                   <td><strong>${this.formatarMoeda(sub)}</strong></td>
                                   <td><button type="button" class="btn-danger-sm btn-rem-item-venda" data-idx="${idx}">Remover</button></td>
@@ -1861,7 +1900,7 @@ class ControladorInterface {
                         .map((p, idx) => {
                         const forma = this.sistema.buscarFormaPagamentoPorId(p.idForma);
                         return `<tr>
-                                  <td>${forma.getDescricao()}</td>
+                                  <td>${this.escaparHTML(forma.getDescricao())}</td>
                                   <td><strong>${this.formatarMoeda(p.valorPago)}</strong></td>
                                   <td><button type="button" class="btn-danger-sm btn-rem-pag-venda" data-idx="${idx}">Remover</button></td>
                               </tr>`;
@@ -1893,20 +1932,20 @@ class ControladorInterface {
                         .map((v) => {
                         const itensStr = v
                             .getItens()
-                            .map((i) => `${i.getQtdVenda()}x ${i.getProduto().getDescricaoProduto()}`)
+                            .map((i) => `${i.getQtdVenda()}x ${this.escaparHTML(i.getProduto().getDescricaoProduto())}`)
                             .join(", ");
                         const pagsStr = v
                             .getPagamentos()
-                            .map((p) => `${p.getFormaPagamento().getDescricao()}: ${this.formatarMoeda(p.getValorPago())}`)
+                            .map((p) => `${this.escaparHTML(p.getFormaPagamento().getDescricao())}: ${this.formatarMoeda(p.getValorPago())}`)
                             .join(" + ");
                         return `<tr>
                                   <td>#${v.getIdVenda()}</td>
-                                  <td>${v.getDataHoraVenda()}</td>
-                                  <td>Sessão #${v.getSessaoCaixa().getIdSessao()} (${v
+                                  <td>${this.escaparHTML(v.getDataHoraVenda())}</td>
+                                  <td>Sessão #${v.getSessaoCaixa().getIdSessao()} (${this.escaparHTML(v
                             .getSessaoCaixa()
                             .getFuncionario()
-                            .getNomeFuncionario()})</td>
-                                  <td>${v.getCliente() ? v.getCliente().getNomeCliente() : "Não identificado"}</td>
+                            .getNomeFuncionario())})</td>
+                                  <td>${v.getCliente() ? this.escaparHTML(v.getCliente().getNomeCliente()) : "Não identificado"}</td>
                                   <td>${itensStr}</td>
                                   <td>${pagsStr}</td>
                                   <td><strong>${this.formatarMoeda(v.getValorTotal())}</strong></td>
@@ -1920,7 +1959,7 @@ class ControladorInterface {
         if (selectCat) {
             selectCat.innerHTML = this.sistema
                 .listarCategorias()
-                .map((c) => `<option value="${c.getIdCategoria()}">${c.getNomeCategoria()}</option>`)
+                .map((c) => `<option value="${c.getIdCategoria()}">${this.escaparHTML(c.getNomeCategoria())}</option>`)
                 .join("");
         }
         const selectForn = document.getElementById("prod-fornecedor");
@@ -1929,45 +1968,54 @@ class ControladorInterface {
                 `<option value="">Sem fornecedor inicial</option>` +
                     this.sistema
                         .listarFornecedores()
-                        .map((f) => `<option value="${f.getIdFornecedor()}">${f.getRazaoSocial()}</option>`)
+                        .map((f) => `<option value="${f.getIdFornecedor()}">${this.escaparHTML(f.getRazaoSocial())}</option>`)
                         .join("");
         }
         const selectMovProd = document.getElementById("mov-produto-codigo");
         if (selectMovProd) {
             selectMovProd.innerHTML = this.sistema
                 .listarProdutos()
-                .map((p) => `<option value="${p.getCodigoBarras()}">${p.getDescricaoProduto()} (Atual: ${p.getQtdEstoque()} ${p.getUnidadeMedida()})</option>`)
+                .map((p) => `<option value="${this.escaparHTML(p.getCodigoBarras())}">${this.escaparHTML(p.getDescricaoProduto())} (Atual: ${p.getQtdEstoque()} ${this.escaparHTML(p.getUnidadeMedida())})</option>`)
                 .join("");
         }
         const tbodyProdutos = document.getElementById("tbody-lista-produtos");
         if (tbodyProdutos) {
-            tbodyProdutos.innerHTML = this.sistema
-                .listarProdutos()
+            const normalizar = (texto) => texto.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+            const termo = normalizar(this.buscaProdutos.trim());
+            const todos = this.sistema.listarProdutos();
+            const filtrados = todos.filter(p => {
+                const corresponde = normalizar(`${p.getCodigoBarras()} ${p.getDescricaoProduto()} ${p.getCategoria().getNomeCategoria()}`).includes(termo);
+                return corresponde && (this.filtroProdutos === "todos" ||
+                    (this.filtroProdutos === "baixo" && p.abaixoDoEstoqueMinimo()) ||
+                    (this.filtroProdutos === "vencido" && p.estaVencido()));
+            });
+            this.definirTexto("contador-produtos", `${filtrados.length} de ${todos.length} produtos`);
+            tbodyProdutos.innerHTML = filtrados
                 .map((p) => {
                 const statusEstoque = p.abaixoDoEstoqueMinimo()
                     ? `<span class="badge badge-warning">Baixo (${p.getQtdEstoque()}/${p.getEstoqueMinimo()})</span>`
                     : `<span class="badge badge-success">Normal (${p.getQtdEstoque()})</span>`;
                 const validadeStr = p.getDataValidade()
                     ? p.estaVencido()
-                        ? `<span class="badge badge-danger">Vencido: ${p.getDataValidade()}</span>`
-                        : p.getDataValidade()
+                        ? `<span class="badge badge-danger">Vencido: ${this.escaparHTML(p.getDataValidade())}</span>`
+                        : this.escaparHTML(p.getDataValidade())
                     : "Não perecível";
                 const forns = p
                     .getFornecedores()
                     .map((f) => f.getRazaoSocial())
                     .join(", ") || "—";
                 return `<tr>
-                        <td><code>${p.getCodigoBarras()}</code></td>
-                        <td><strong>${p.getDescricaoProduto()}</strong></td>
-                        <td>${p.getCategoria().getNomeCategoria()}</td>
+                        <td><code>${this.escaparHTML(p.getCodigoBarras())}</code></td>
+                        <td><strong>${this.escaparHTML(p.getDescricaoProduto())}</strong></td>
+                        <td>${this.escaparHTML(p.getCategoria().getNomeCategoria())}</td>
                         <td>${this.formatarMoeda(p.getCustoProduto())}</td>
                         <td><strong>${this.formatarMoeda(p.getPrecoVenda())}</strong></td>
-                        <td>${statusEstoque} ${p.getUnidadeMedida()}</td>
+                        <td>${statusEstoque} ${this.escaparHTML(p.getUnidadeMedida())}</td>
                         <td>${validadeStr}</td>
-                        <td>${forns}</td>
+                        <td>${this.escaparHTML(forns)}</td>
                     </tr>`;
             })
-                .join("");
+                .join("") || '<tr><td colspan="8" class="empty-msg">Nenhum produto encontrado. Ajuste a busca ou o filtro.</td></tr>';
         }
     }
     renderizarCompras() {
@@ -1976,7 +2024,7 @@ class ControladorInterface {
             const val = selectFornCompra.value;
             selectFornCompra.innerHTML = this.sistema
                 .listarFornecedores()
-                .map((f) => `<option value="${f.getIdFornecedor()}">${f.getRazaoSocial()} (${f.getCnpj()})</option>`)
+                .map((f) => `<option value="${f.getIdFornecedor()}">${this.escaparHTML(f.getRazaoSocial())} (${this.escaparHTML(f.getCnpj())})</option>`)
                 .join("");
             if (val)
                 selectFornCompra.value = val;
@@ -1986,7 +2034,7 @@ class ControladorInterface {
             const val = selectProdCompra.value;
             selectProdCompra.innerHTML = this.sistema
                 .listarProdutos()
-                .map((p) => `<option value="${p.getCodigoBarras()}">${p.getDescricaoProduto()} (Custo atual: ${this.formatarMoeda(p.getCustoProduto())})</option>`)
+                .map((p) => `<option value="${this.escaparHTML(p.getCodigoBarras())}">${this.escaparHTML(p.getDescricaoProduto())} (Custo atual: ${this.formatarMoeda(p.getCustoProduto())})</option>`)
                 .join("");
             if (val)
                 selectProdCompra.value = val;
@@ -2001,8 +2049,8 @@ class ControladorInterface {
                         const prod = this.sistema.buscarProdutoPorCodigo(item.codigoBarras);
                         const sub = item.qtdCompra * item.custoUnitario;
                         return `<tr>
-                                  <td>${prod.getDescricaoProduto()}</td>
-                                  <td>${item.qtdCompra} ${prod.getUnidadeMedida()}</td>
+                                  <td>${this.escaparHTML(prod.getDescricaoProduto())}</td>
+                                  <td>${item.qtdCompra} ${this.escaparHTML(prod.getUnidadeMedida())}</td>
                                   <td>${this.formatarMoeda(item.custoUnitario)}</td>
                                   <td><strong>${this.formatarMoeda(sub)}</strong></td>
                                   <td><button type="button" class="btn-danger-sm btn-rem-item-compra" data-idx="${idx}">Remover</button></td>
@@ -2025,10 +2073,10 @@ class ControladorInterface {
                 .listarFornecedores()
                 .map((f) => `<tr>
                         <td>#${f.getIdFornecedor()}</td>
-                        <td><strong>${f.getRazaoSocial()}</strong></td>
-                        <td>${f.getCnpj()}</td>
-                        <td>${f.getEmail()}</td>
-                        <td>${f.getTelefones().join(" / ") || "—"}</td>
+                        <td><strong>${this.escaparHTML(f.getRazaoSocial())}</strong></td>
+                        <td>${this.escaparHTML(f.getCnpj())}</td>
+                        <td>${this.escaparHTML(f.getEmail())}</td>
+                        <td>${this.escaparHTML(f.getTelefones().join(" / ")) || "—"}</td>
                     </tr>`)
                 .join("");
         }
@@ -2042,13 +2090,13 @@ class ControladorInterface {
                         .map((c) => {
                         const resumoItens = c
                             .getItens()
-                            .map((i) => `${i.getQtdCompra()}x ${i.getProduto().getDescricaoProduto()} (${this.formatarMoeda(i.getCustoUnitario())})`)
+                            .map((i) => `${i.getQtdCompra()}x ${this.escaparHTML(i.getProduto().getDescricaoProduto())} (${this.formatarMoeda(i.getCustoUnitario())})`)
                             .join(", ");
                         return `<tr>
                                   <td>#${c.getIdCompra()}</td>
-                                  <td>${c.getDataCompra()}</td>
-                                  <td>${c.getFornecedor().getRazaoSocial()}</td>
-                                  <td>${c.getFuncionarioResponsavel().getNomeFuncionario()}</td>
+                                  <td>${this.escaparHTML(c.getDataCompra())}</td>
+                                  <td>${this.escaparHTML(c.getFornecedor().getRazaoSocial())}</td>
+                                  <td>${this.escaparHTML(c.getFuncionarioResponsavel().getNomeFuncionario())}</td>
                                   <td>${resumoItens}</td>
                                   <td><strong>${this.formatarMoeda(c.getValorTotal())}</strong></td>
                               </tr>`;
@@ -2061,7 +2109,7 @@ class ControladorInterface {
         if (selectCargo) {
             selectCargo.innerHTML = this.sistema
                 .listarCargos()
-                .map((c) => `<option value="${c.getIdCargo()}">${c.getNomeCargo()} (${this.formatarMoeda(c.getSalarioBase())})</option>`)
+                .map((c) => `<option value="${c.getIdCargo()}">${this.escaparHTML(c.getNomeCargo())} (${this.formatarMoeda(c.getSalarioBase())})</option>`)
                 .join("");
         }
         const tbodyFuncionarios = document.getElementById("tbody-lista-funcionarios");
@@ -2070,12 +2118,12 @@ class ControladorInterface {
                 .listarFuncionarios()
                 .map((f) => `<tr>
                         <td>#${f.getIdFuncionario()}</td>
-                        <td><strong>${f.getNomeFuncionario()}</strong></td>
-                        <td>${f.getCpfFuncionario()}</td>
-                        <td><span class="badge badge-info">${f.getCargo().getNomeCargo()}</span></td>
+                        <td><strong>${this.escaparHTML(f.getNomeFuncionario())}</strong></td>
+                        <td>${this.escaparHTML(f.getCpfFuncionario())}</td>
+                        <td><span class="badge badge-info">${this.escaparHTML(f.getCargo().getNomeCargo())}</span></td>
                         <td>${this.formatarMoeda(f.getCargo().getSalarioBase())}</td>
-                        <td>${f.getDataAdmissao()}</td>
-                        <td>${f.getTelefones().join(" / ") || "—"}</td>
+                        <td>${this.escaparHTML(f.getDataAdmissao())}</td>
+                        <td>${this.escaparHTML(f.getTelefones().join(" / ")) || "—"}</td>
                     </tr>`)
                 .join("");
         }
@@ -2083,7 +2131,7 @@ class ControladorInterface {
         if (selectRastreio) {
             selectRastreio.innerHTML = this.sistema
                 .listarFuncionarios()
-                .map((f) => `<option value="${f.getIdFuncionario()}" ${f.getIdFuncionario() === this.funcionarioRastreioId ? "selected" : ""}>${f.getNomeFuncionario()} (${f.getCargo().getNomeCargo()})</option>`)
+                .map((f) => `<option value="${f.getIdFuncionario()}" ${f.getIdFuncionario() === this.funcionarioRastreioId ? "selected" : ""}>${this.escaparHTML(f.getNomeFuncionario())} (${this.escaparHTML(f.getCargo().getNomeCargo())})</option>`)
                 .join("");
         }
         this.renderizarRastreabilidade();
@@ -2104,7 +2152,7 @@ class ControladorInterface {
                 : dados.sessoesCaixa
                     .map((s) => `<li><strong>Sessão #${s.getIdSessao()}</strong> (Caixa 0${s
                     .getCaixa()
-                    .getNumeroCaixa()}) — Abertura: ${s.getDataAbertura()} | Inicial: ${this.formatarMoeda(s.getValorInicial())} | Status: ${s.estaAberta()
+                    .getNumeroCaixa()}) — Abertura: ${this.escaparHTML(s.getDataAbertura())} | Inicial: ${this.formatarMoeda(s.getValorInicial())} | Status: ${s.estaAberta()
                     ? "Aberta"
                     : `Fechada (${this.formatarMoeda(s.getValorFinal() || 0)})`}</li>`)
                     .join("")}
@@ -2116,9 +2164,9 @@ class ControladorInterface {
                             ${dados.comprasRegistradas.length === 0
                 ? "<li>Nenhuma compra registrada.</li>"
                 : dados.comprasRegistradas
-                    .map((c) => `<li><strong>Compra #${c.getIdCompra()}</strong> (${c.getDataCompra()}) — ${c
+                    .map((c) => `<li><strong>Compra #${c.getIdCompra()}</strong> (${this.escaparHTML(c.getDataCompra())}) — ${this.escaparHTML(c
                     .getFornecedor()
-                    .getRazaoSocial()} — Total: ${this.formatarMoeda(c.getValorTotal())}</li>`)
+                    .getRazaoSocial())} — Total: ${this.formatarMoeda(c.getValorTotal())}</li>`)
                     .join("")}
                         </ul>
                     </div>
@@ -2129,9 +2177,9 @@ class ControladorInterface {
                 ? "<li>Nenhuma movimentação realizada.</li>"
                 : dados.movimentacoesEstoque
                     .slice(0, 8)
-                    .map((m) => `<li><strong>[${m.getTipo()}]</strong> ${m.getQtdMovimentacao()}x ${m
+                    .map((m) => `<li><strong>[${m.getTipo()}]</strong> ${m.getQtdMovimentacao()}x ${this.escaparHTML(m
                     .getProduto()
-                    .getDescricaoProduto()} (${m.getDataHoraMov()})</li>`)
+                    .getDescricaoProduto())} (${this.escaparHTML(m.getDataHoraMov())})</li>`)
                     .join("")}
                         </ul>
                     </div>

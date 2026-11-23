@@ -1,0 +1,58 @@
+GESTAO COMERCIAL - PREVIEW PARA TESTES DO GRUPO
+Versao de distribuicao: 23/11/2026
+
+1. COMO ABRIR SEM INSTALAR NADA
+
+- Extraia TODO o ZIP para uma pasta. Nao abra o site de dentro do ZIP.
+- No pacote de preview, abra Trabalho-de-POO-Preview/index.html no navegador.
+- Se baixou pelo GitHub (Code > Download ZIP), abra sistema_comercio/index.html
+  dentro da pasta extraida.
+- Mantenha estilos.css e a pasta dist ao lado do index.html.
+- O site usa dados ficticios de demonstracao e nao exige internet para funcionar.
+
+2. SERVIDOR LOCAL OPCIONAL (RECOMENDADO PARA TESTAR PERSISTENCIA)
+
+Se tiver Node.js instalado:
+- No Windows, abra Iniciar-Preview.cmd e mantenha o terminal aberto.
+- Em qualquer sistema, abra um terminal na pasta do index.html e execute:
+  node preview.mjs
+- Acesse http://127.0.0.1:4173 no navegador.
+- Para encerrar, pressione Ctrl+C no terminal do servidor.
+- Se a porta estiver ocupada, no PowerShell execute:
+  $env:PORT=4174; node preview.mjs
+  e use http://127.0.0.1:4174.
+- Nao e necessario executar npm install para usar o servidor ou abrir o site.
+
+3. ROTEIRO DE TESTES (USE APENAS DADOS FICTICIOS)
+
+Para comecar com os valores abaixo, use Restaurar Dados Demo e confirme.
+Isso substitui os cadastros e operacoes de teste salvos neste navegador.
+
+- Visao Geral: conferir vendas, saldo e alertas de estoque/validade.
+- Estoque: buscar "feijao" sem acento; filtrar estoque baixo e vencidos.
+- PDV: na sessao demo aberta, adicionar 1 Arroz Tipo 1 (R$ 28,90), informar
+  pagamento PIX de R$ 28,90 e finalizar. Conferir historico e estoque reduzido.
+- Compras: incluir 3 unidades de arroz com custo de R$ 21,50, concluir a compra
+  e conferir entrada no estoque e historico de compra de R$ 64,50.
+- Estoque: registrar uma saida manual de 1 unidade e conferir o novo saldo.
+- Equipe: selecionar o funcionario responsavel e conferir a rastreabilidade.
+- PDV: fechar o caixa, reabrir, recarregar e conferir historico e sessao.
+- Teste de erro: tentar vender acima do estoque ou finalizar com pagamento
+  insuficiente; a operacao deve ser bloqueada e o estoque deve ficar inalterado.
+
+Ao relatar um problema, informe: navegador, forma de abertura (arquivo ou servidor),
+modulo, passos, resultado esperado e resultado observado. Use captura de tela
+apenas com dados ficticios.
+
+4. DADOS E LIMITES
+
+- Cada navegador/computador tem seus proprios dados. Nao ha sincronizacao.
+- O localhost de uma pessoa nao abre o site no computador de outra.
+- A persistencia de arquivos file:// depende do navegador. Se houver problema
+  para manter os dados apos recarregar, use o servidor local.
+- Limpar os dados do navegador ou restaurar a demo pode apagar testes anteriores.
+- Nao informe dados pessoais, senhas reais ou dados financeiros reais.
+- Esta e uma demonstracao: faltam SQL, API, login real, permissoes e outros
+  recursos de producao. Senhas demo ficam no armazenamento local em texto.
+- O saldo de caixa segue a regra original: valor inicial + vendas de todas as
+  formas de pagamento, sem separar exclusivamente dinheiro fisico.

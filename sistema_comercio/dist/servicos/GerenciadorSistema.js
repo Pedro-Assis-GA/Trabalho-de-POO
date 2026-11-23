@@ -21,8 +21,7 @@ export class GerenciadorSistema {
         if (carregarDadosPadrao) {
             const carregouDoStorage = this.carregarEstado();
             if (!carregouDoStorage) {
-                this.popularDadosIniciais();
-                this.salvarEstado();
+                this.resetarDadosParaPadrao();
             }
         }
     }
@@ -185,6 +184,9 @@ export class GerenciadorSistema {
         return this.produtos.filter((p) => p.estaVencido());
     }
     realizarAjusteEstoque(codigoBarras, tipo, quantidade, idFuncionario) {
+        if (!Object.values(TipoMovimentacao).includes(tipo) || !Number.isFinite(quantidade)) {
+            throw new Error("Tipo de movimentação ou quantidade inválida.");
+        }
         const produto = this.buscarProdutoPorCodigo(codigoBarras);
         const funcionario = this.buscarFuncionarioPorId(idFuncionario);
         if (tipo === TipoMovimentacao.ENTRADA) {
@@ -196,7 +198,7 @@ export class GerenciadorSistema {
         else if (tipo === TipoMovimentacao.AJUSTE) {
             produto.definirEstoquePorAjuste(quantidade);
         }
-        const mov = this.registrarMovimentacaoInterna(tipo, quantidade > 0 ? quantidade : 1, produto, funcionario);
+        const mov = this.registrarMovimentacaoInterna(tipo, quantidade, produto, funcionario);
         this.notificar("ESTOQUE_MOVIMENTADO", mov);
         return mov;
     }
@@ -221,10 +223,14 @@ export class GerenciadorSistema {
         for (const item of itensInput) {
             const produto = this.buscarProdutoPorCodigo(item.codigoBarras);
             compra.adicionarItem(produto, item.qtdCompra, item.custoUnitario);
-            produto.adicionarEstoque(item.qtdCompra);
-            produto.setCustoProduto(item.custoUnitario);
+        }
+        // Valide toda a nota antes de alterar estoque, custos e rastreabilidade.
+        for (const item of compra.getItens()) {
+            const produto = item.getProduto();
+            produto.adicionarEstoque(item.getQtdCompra());
+            produto.setCustoProduto(item.getCustoUnitario());
             produto.vincularFornecedor(fornecedor);
-            this.registrarMovimentacaoInterna(TipoMovimentacao.ENTRADA, item.qtdCompra, produto, funcionario);
+            this.registrarMovimentacaoInterna(TipoMovimentacao.ENTRADA, item.getQtdCompra(), produto, funcionario);
         }
         this.compras.unshift(compra);
         this.notificar("COMPRA_REGISTRADA", compra);
@@ -359,6 +365,7 @@ export class GerenciadorSistema {
         this.clientes = [];
         this.formasPagamento = [];
         this.vendas = [];
+        this.funcionarioLogado = null;
         this.popularDadosIniciais();
         this.notificar("SISTEMA_RESETADO");
     }
@@ -421,6 +428,7 @@ export class GerenciadorSistema {
         }
         try {
             const payload = {
+                funcionarioAtivoId: this.funcionarioLogado?.getIdFuncionario(),
                 categorias: this.categorias.map((c) => ({
                     idCategoria: c.getIdCategoria(),
                     nomeCategoria: c.getNomeCategoria()
@@ -535,7 +543,7 @@ export class GerenciadorSistema {
             this.categorias = dados.categorias.map((c) => new Categoria(c.idCategoria, c.nomeCategoria));
             this.cargos = dados.cargos.map((c) => new Cargo(c.idCargo, c.nomeCargo, c.salarioBase));
             this.funcionarios = dados.funcionarios.map((f) => new Funcionario(f.idFuncionario, f.cpfFuncionario, f.nomeFuncionario, f.senha, f.dataAdmissao, this.buscarCargoPorId(f.idCargo), f.telefones));
-            this.funcionarioLogado = this.funcionarios[0] || null;
+            this.funcionarioLogado = this.funcionarios.find(f => f.getIdFuncionario() === dados.funcionarioAtivoId) || this.funcionarios[0] || null;
             this.fornecedores = dados.fornecedores.map((f) => new Fornecedor(f.idFornecedor, f.cnpj, f.razaoSocial, f.email, f.telefones));
             this.produtos = dados.produtos.map((p) => new Produto(p.codigoBarras, p.descricaoProduto, p.precoVenda, p.custoProduto, p.unidadeMedida, p.qtdEstoque, p.estoqueMinimo, this.buscarCategoriaPorId(p.idCategoria), p.dataValidade, (p.idsFornecedores || []).map((id) => this.buscarFornecedorPorId(id))));
             this.caixas = dados.caixas.map((c) => new Caixa(c.idCaixa, c.numeroCaixa, c.statusCaixa));
@@ -567,6 +575,12 @@ export class GerenciadorSistema {
                 sessao.restaurarVenda(venda);
                 return venda;
             });
+            // A ordem histórica de sessões não pode sobrescrever o estado atual do caixa.
+            for (const caixa of this.caixas) {
+                const ocupada = this.sessoesCaixa.some(s => s.estaAberta() && s.getCaixa() === caixa);
+                if (ocupada)
+                    caixa.setStatusCaixa(StatusCaixa.OCUPADO);
+            }
             return true;
         }
         catch {

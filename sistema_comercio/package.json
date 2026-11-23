@@ -5,6 +5,12 @@
   "type": "module",
   "scripts": {
     "build": "tsc && node gerar_bundle.mjs",
-    "test": "node dist/teste_fluxo.js"
+    "pretest": "npm run build",
+    "test": "node dist/teste_fluxo.js && node --test tests/regressoes.test.mjs",
+    "preview": "node preview.mjs",
+    "dev": "node preview.mjs"
+  },
+  "devDependencies": {
+    "typescript": "6.0.3"
   }
 }

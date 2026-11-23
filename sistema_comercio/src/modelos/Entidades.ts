@@ -59,7 +59,7 @@ export class Cargo implements EntidadeIdentificavel<number> {
         if (!nomeCargo || nomeCargo.trim() === "") {
             throw new Error("O nome do cargo é obrigatório.");
         }
-        if (salarioBase < 0) {
+        if ((!Number.isFinite(salarioBase) || salarioBase < 0)) {
             throw new Error("O salário base não pode ser negativo.");
         }
         this.idCargo = idCargo;
@@ -91,7 +91,7 @@ export class Cargo implements EntidadeIdentificavel<number> {
     }
 
     public setSalarioBase(salario: number): void {
-        if (salario < 0) {
+        if ((!Number.isFinite(salario) || salario < 0)) {
             throw new Error("O salário base não pode ser negativo.");
         }
         this.salarioBase = salario;
@@ -319,7 +319,7 @@ export class Caixa implements EntidadeIdentificavel<number> {
         numeroCaixa: number,
         statusCaixa: StatusCaixa = StatusCaixa.LIVRE
     ) {
-        if (numeroCaixa <= 0) {
+        if ((!Number.isFinite(numeroCaixa) || numeroCaixa <= 0)) {
             throw new Error("O número do caixa deve ser maior que zero.");
         }
         this.idCaixa = idCaixa;

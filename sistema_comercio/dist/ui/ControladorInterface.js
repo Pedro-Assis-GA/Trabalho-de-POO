@@ -1,10 +1,17 @@
 import { StatusCaixa, TipoMovimentacao } from "../modelos/Entidades.js";
 export class ControladorInterface {
+    escaparHTML(valor) {
+        return String(valor ?? "").replace(/[&<>"']/g, caractere => ({
+            "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+        }[caractere]));
+    }
     constructor(sistema) {
         this.carrinhoVenda = [];
         this.pagamentosVenda = [];
         this.itensNovaCompra = [];
         this.funcionarioRastreioId = 1;
+        this.buscaProdutos = "";
+        this.filtroProdutos = "todos";
         this.sistema = sistema;
         this.sistema.adicionarObservador(this);
     }
@@ -49,6 +56,7 @@ export class ControladorInterface {
                     return;
                 botoes.forEach((b) => b.classList.remove("active"));
                 btn.classList.add("active");
+                botoes.forEach(b => b.setAttribute("aria-current", b === btn ? "page" : "false"));
                 document.querySelectorAll(".tab-section").forEach((sec) => {
                     sec.classList.toggle("active", sec.id === `tab-${alvo}`);
                 });
@@ -69,6 +77,8 @@ export class ControladorInterface {
         });
         const btnReset = document.getElementById("btn-resetar-dados");
         btnReset?.addEventListener("click", () => {
+            if (!window.confirm("Restaurar a demonstração? Cadastros, vendas e compras salvos neste navegador serão substituídos."))
+                return;
             this.carrinhoVenda = [];
             this.pagamentosVenda = [];
             this.itensNovaCompra = [];
@@ -219,6 +229,14 @@ export class ControladorInterface {
     }
     // ==================== EVENTOS DE ESTOQUE E PRODUTOS ====================
     configurarEventosEstoque() {
+        document.getElementById("busca-produtos")?.addEventListener("input", evento => {
+            this.buscaProdutos = evento.target.value;
+            this.renderizarEstoque();
+        });
+        document.getElementById("filtro-produtos")?.addEventListener("change", evento => {
+            this.filtroProdutos = evento.target.value;
+            this.renderizarEstoque();
+        });
         const formCategoria = document.getElementById("form-nova-categoria");
         formCategoria?.addEventListener("submit", (ev) => {
             ev.preventDefault();
@@ -393,10 +411,10 @@ export class ControladorInterface {
         const funcionarios = this.sistema.listarFuncionarios();
         const logado = this.sistema.getFuncionarioLogado();
         selectOperador.innerHTML = funcionarios
-            .map((f) => `<option value="${f.getIdFuncionario()}" ${logado?.getIdFuncionario() === f.getIdFuncionario() ? "selected" : ""}>${f.getNomeFuncionario()} (ID #${f.getIdFuncionario()})</option>`)
+            .map((f) => `<option value="${f.getIdFuncionario()}" ${logado?.getIdFuncionario() === f.getIdFuncionario() ? "selected" : ""}>${this.escaparHTML(f.getNomeFuncionario())} (ID #${f.getIdFuncionario()})</option>`)
             .join("");
         if (badgeCargo && logado) {
-            badgeCargo.textContent = `${logado.getCargo().getNomeCargo()}`;
+            badgeCargo.textContent = logado.getCargo().getNomeCargo();
         }
     }
     renderizarDashboard() {
@@ -428,14 +446,14 @@ export class ControladorInterface {
                             tags.push(`<span class="badge badge-warning">Abaixo do Mínimo</span>`);
                         }
                         if (p.estaVencido()) {
-                            tags.push(`<span class="badge badge-danger">Vencido (${p.getDataValidade()})</span>`);
+                            tags.push(`<span class="badge badge-danger">Vencido (${this.escaparHTML(p.getDataValidade())})</span>`);
                         }
                         return `<tr>
-                                  <td><code>${p.getCodigoBarras()}</code></td>
-                                  <td><strong>${p.getDescricaoProduto()}</strong></td>
-                                  <td>${p.getCategoria().getNomeCategoria()}</td>
-                                  <td>${p.getQtdEstoque()} ${p.getUnidadeMedida()}</td>
-                                  <td>${p.getEstoqueMinimo()} ${p.getUnidadeMedida()}</td>
+                                  <td><code>${this.escaparHTML(p.getCodigoBarras())}</code></td>
+                                  <td><strong>${this.escaparHTML(p.getDescricaoProduto())}</strong></td>
+                                  <td>${this.escaparHTML(p.getCategoria().getNomeCategoria())}</td>
+                                  <td>${p.getQtdEstoque()} ${this.escaparHTML(p.getUnidadeMedida())}</td>
+                                  <td>${p.getEstoqueMinimo()} ${this.escaparHTML(p.getUnidadeMedida())}</td>
                                   <td>${tags.join(" ")}</td>
                               </tr>`;
                     })
@@ -456,11 +474,11 @@ export class ControladorInterface {
                                 : "badge-info";
                         return `<tr>
                                   <td>#${m.getIdMovimentacao()}</td>
-                                  <td>${m.getDataHoraMov()}</td>
+                                  <td>${this.escaparHTML(m.getDataHoraMov())}</td>
                                   <td><span class="badge ${classeBadge}">${m.getTipo()}</span></td>
-                                  <td>${m.getProduto().getDescricaoProduto()}</td>
-                                  <td>${m.getQtdMovimentacao()} ${m.getProduto().getUnidadeMedida()}</td>
-                                  <td>${m.getFuncionarioResponsavel().getNomeFuncionario()}</td>
+                                  <td>${this.escaparHTML(m.getProduto().getDescricaoProduto())}</td>
+                                  <td>${m.getQtdMovimentacao()} ${this.escaparHTML(m.getProduto().getUnidadeMedida())}</td>
+                                  <td>${this.escaparHTML(m.getFuncionarioResponsavel().getNomeFuncionario())}</td>
                               </tr>`;
                     })
                         .join("");
@@ -499,7 +517,7 @@ export class ControladorInterface {
             const valorAtual = selectProdVenda.value;
             selectProdVenda.innerHTML = this.sistema
                 .listarProdutos()
-                .map((p) => `<option value="${p.getCodigoBarras()}">${p.getDescricaoProduto()} — ${this.formatarMoeda(p.getPrecoVenda())} (Est: ${p.getQtdEstoque()} ${p.getUnidadeMedida()})</option>`)
+                .map((p) => `<option value="${this.escaparHTML(p.getCodigoBarras())}">${this.escaparHTML(p.getDescricaoProduto())} — ${this.formatarMoeda(p.getPrecoVenda())} (Est: ${p.getQtdEstoque()} ${this.escaparHTML(p.getUnidadeMedida())})</option>`)
                 .join("");
             if (valorAtual)
                 selectProdVenda.value = valorAtual;
@@ -511,7 +529,7 @@ export class ControladorInterface {
                 `<option value="">Consumidor Não Identificado (Opcional)</option>` +
                     this.sistema
                         .listarClientes()
-                        .map((c) => `<option value="${c.getIdCliente()}">${c.getNomeCliente()} — CPF: ${c.getCpfCliente()}</option>`)
+                        .map((c) => `<option value="${c.getIdCliente()}">${this.escaparHTML(c.getNomeCliente())} — CPF: ${this.escaparHTML(c.getCpfCliente())}</option>`)
                         .join("");
             if (valCli)
                 selectCliente.value = valCli;
@@ -521,7 +539,7 @@ export class ControladorInterface {
             const valForma = selectFormaPag.value;
             selectFormaPag.innerHTML = this.sistema
                 .listarFormasPagamento()
-                .map((f) => `<option value="${f.getIdForma()}">${f.getDescricao()}</option>`)
+                .map((f) => `<option value="${f.getIdForma()}">${this.escaparHTML(f.getDescricao())}</option>`)
                 .join("");
             if (valForma)
                 selectFormaPag.value = valForma;
@@ -537,8 +555,8 @@ export class ControladorInterface {
                         const prod = this.sistema.buscarProdutoPorCodigo(item.codigoBarras);
                         const sub = prod.getPrecoVenda() * item.qtdVenda;
                         return `<tr>
-                                  <td>${prod.getDescricaoProduto()}</td>
-                                  <td>${item.qtdVenda} ${prod.getUnidadeMedida()}</td>
+                                  <td>${this.escaparHTML(prod.getDescricaoProduto())}</td>
+                                  <td>${item.qtdVenda} ${this.escaparHTML(prod.getUnidadeMedida())}</td>
                                   <td>${this.formatarMoeda(prod.getPrecoVenda())}</td>
                                   <td><strong>${this.formatarMoeda(sub)}</strong></td>
                                   <td><button type="button" class="btn-danger-sm btn-rem-item-venda" data-idx="${idx}">Remover</button></td>
@@ -564,7 +582,7 @@ export class ControladorInterface {
                         .map((p, idx) => {
                         const forma = this.sistema.buscarFormaPagamentoPorId(p.idForma);
                         return `<tr>
-                                  <td>${forma.getDescricao()}</td>
+                                  <td>${this.escaparHTML(forma.getDescricao())}</td>
                                   <td><strong>${this.formatarMoeda(p.valorPago)}</strong></td>
                                   <td><button type="button" class="btn-danger-sm btn-rem-pag-venda" data-idx="${idx}">Remover</button></td>
                               </tr>`;
@@ -596,20 +614,20 @@ export class ControladorInterface {
                         .map((v) => {
                         const itensStr = v
                             .getItens()
-                            .map((i) => `${i.getQtdVenda()}x ${i.getProduto().getDescricaoProduto()}`)
+                            .map((i) => `${i.getQtdVenda()}x ${this.escaparHTML(i.getProduto().getDescricaoProduto())}`)
                             .join(", ");
                         const pagsStr = v
                             .getPagamentos()
-                            .map((p) => `${p.getFormaPagamento().getDescricao()}: ${this.formatarMoeda(p.getValorPago())}`)
+                            .map((p) => `${this.escaparHTML(p.getFormaPagamento().getDescricao())}: ${this.formatarMoeda(p.getValorPago())}`)
                             .join(" + ");
                         return `<tr>
                                   <td>#${v.getIdVenda()}</td>
-                                  <td>${v.getDataHoraVenda()}</td>
-                                  <td>Sessão #${v.getSessaoCaixa().getIdSessao()} (${v
+                                  <td>${this.escaparHTML(v.getDataHoraVenda())}</td>
+                                  <td>Sessão #${v.getSessaoCaixa().getIdSessao()} (${this.escaparHTML(v
                             .getSessaoCaixa()
                             .getFuncionario()
-                            .getNomeFuncionario()})</td>
-                                  <td>${v.getCliente() ? v.getCliente().getNomeCliente() : "Não identificado"}</td>
+                            .getNomeFuncionario())})</td>
+                                  <td>${v.getCliente() ? this.escaparHTML(v.getCliente().getNomeCliente()) : "Não identificado"}</td>
                                   <td>${itensStr}</td>
                                   <td>${pagsStr}</td>
                                   <td><strong>${this.formatarMoeda(v.getValorTotal())}</strong></td>
@@ -623,7 +641,7 @@ export class ControladorInterface {
         if (selectCat) {
             selectCat.innerHTML = this.sistema
                 .listarCategorias()
-                .map((c) => `<option value="${c.getIdCategoria()}">${c.getNomeCategoria()}</option>`)
+                .map((c) => `<option value="${c.getIdCategoria()}">${this.escaparHTML(c.getNomeCategoria())}</option>`)
                 .join("");
         }
         const selectForn = document.getElementById("prod-fornecedor");
@@ -632,45 +650,54 @@ export class ControladorInterface {
                 `<option value="">Sem fornecedor inicial</option>` +
                     this.sistema
                         .listarFornecedores()
-                        .map((f) => `<option value="${f.getIdFornecedor()}">${f.getRazaoSocial()}</option>`)
+                        .map((f) => `<option value="${f.getIdFornecedor()}">${this.escaparHTML(f.getRazaoSocial())}</option>`)
                         .join("");
         }
         const selectMovProd = document.getElementById("mov-produto-codigo");
         if (selectMovProd) {
             selectMovProd.innerHTML = this.sistema
                 .listarProdutos()
-                .map((p) => `<option value="${p.getCodigoBarras()}">${p.getDescricaoProduto()} (Atual: ${p.getQtdEstoque()} ${p.getUnidadeMedida()})</option>`)
+                .map((p) => `<option value="${this.escaparHTML(p.getCodigoBarras())}">${this.escaparHTML(p.getDescricaoProduto())} (Atual: ${p.getQtdEstoque()} ${this.escaparHTML(p.getUnidadeMedida())})</option>`)
                 .join("");
         }
         const tbodyProdutos = document.getElementById("tbody-lista-produtos");
         if (tbodyProdutos) {
-            tbodyProdutos.innerHTML = this.sistema
-                .listarProdutos()
+            const normalizar = (texto) => texto.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+            const termo = normalizar(this.buscaProdutos.trim());
+            const todos = this.sistema.listarProdutos();
+            const filtrados = todos.filter(p => {
+                const corresponde = normalizar(`${p.getCodigoBarras()} ${p.getDescricaoProduto()} ${p.getCategoria().getNomeCategoria()}`).includes(termo);
+                return corresponde && (this.filtroProdutos === "todos" ||
+                    (this.filtroProdutos === "baixo" && p.abaixoDoEstoqueMinimo()) ||
+                    (this.filtroProdutos === "vencido" && p.estaVencido()));
+            });
+            this.definirTexto("contador-produtos", `${filtrados.length} de ${todos.length} produtos`);
+            tbodyProdutos.innerHTML = filtrados
                 .map((p) => {
                 const statusEstoque = p.abaixoDoEstoqueMinimo()
                     ? `<span class="badge badge-warning">Baixo (${p.getQtdEstoque()}/${p.getEstoqueMinimo()})</span>`
                     : `<span class="badge badge-success">Normal (${p.getQtdEstoque()})</span>`;
                 const validadeStr = p.getDataValidade()
                     ? p.estaVencido()
-                        ? `<span class="badge badge-danger">Vencido: ${p.getDataValidade()}</span>`
-                        : p.getDataValidade()
+                        ? `<span class="badge badge-danger">Vencido: ${this.escaparHTML(p.getDataValidade())}</span>`
+                        : this.escaparHTML(p.getDataValidade())
                     : "Não perecível";
                 const forns = p
                     .getFornecedores()
                     .map((f) => f.getRazaoSocial())
                     .join(", ") || "—";
                 return `<tr>
-                        <td><code>${p.getCodigoBarras()}</code></td>
-                        <td><strong>${p.getDescricaoProduto()}</strong></td>
-                        <td>${p.getCategoria().getNomeCategoria()}</td>
+                        <td><code>${this.escaparHTML(p.getCodigoBarras())}</code></td>
+                        <td><strong>${this.escaparHTML(p.getDescricaoProduto())}</strong></td>
+                        <td>${this.escaparHTML(p.getCategoria().getNomeCategoria())}</td>
                         <td>${this.formatarMoeda(p.getCustoProduto())}</td>
                         <td><strong>${this.formatarMoeda(p.getPrecoVenda())}</strong></td>
-                        <td>${statusEstoque} ${p.getUnidadeMedida()}</td>
+                        <td>${statusEstoque} ${this.escaparHTML(p.getUnidadeMedida())}</td>
                         <td>${validadeStr}</td>
-                        <td>${forns}</td>
+                        <td>${this.escaparHTML(forns)}</td>
                     </tr>`;
             })
-                .join("");
+                .join("") || '<tr><td colspan="8" class="empty-msg">Nenhum produto encontrado. Ajuste a busca ou o filtro.</td></tr>';
         }
     }
     renderizarCompras() {
@@ -679,7 +706,7 @@ export class ControladorInterface {
             const val = selectFornCompra.value;
             selectFornCompra.innerHTML = this.sistema
                 .listarFornecedores()
-                .map((f) => `<option value="${f.getIdFornecedor()}">${f.getRazaoSocial()} (${f.getCnpj()})</option>`)
+                .map((f) => `<option value="${f.getIdFornecedor()}">${this.escaparHTML(f.getRazaoSocial())} (${this.escaparHTML(f.getCnpj())})</option>`)
                 .join("");
             if (val)
                 selectFornCompra.value = val;
@@ -689,7 +716,7 @@ export class ControladorInterface {
             const val = selectProdCompra.value;
             selectProdCompra.innerHTML = this.sistema
                 .listarProdutos()
-                .map((p) => `<option value="${p.getCodigoBarras()}">${p.getDescricaoProduto()} (Custo atual: ${this.formatarMoeda(p.getCustoProduto())})</option>`)
+                .map((p) => `<option value="${this.escaparHTML(p.getCodigoBarras())}">${this.escaparHTML(p.getDescricaoProduto())} (Custo atual: ${this.formatarMoeda(p.getCustoProduto())})</option>`)
                 .join("");
             if (val)
                 selectProdCompra.value = val;
@@ -704,8 +731,8 @@ export class ControladorInterface {
                         const prod = this.sistema.buscarProdutoPorCodigo(item.codigoBarras);
                         const sub = item.qtdCompra * item.custoUnitario;
                         return `<tr>
-                                  <td>${prod.getDescricaoProduto()}</td>
-                                  <td>${item.qtdCompra} ${prod.getUnidadeMedida()}</td>
+                                  <td>${this.escaparHTML(prod.getDescricaoProduto())}</td>
+                                  <td>${item.qtdCompra} ${this.escaparHTML(prod.getUnidadeMedida())}</td>
                                   <td>${this.formatarMoeda(item.custoUnitario)}</td>
                                   <td><strong>${this.formatarMoeda(sub)}</strong></td>
                                   <td><button type="button" class="btn-danger-sm btn-rem-item-compra" data-idx="${idx}">Remover</button></td>
@@ -728,10 +755,10 @@ export class ControladorInterface {
                 .listarFornecedores()
                 .map((f) => `<tr>
                         <td>#${f.getIdFornecedor()}</td>
-                        <td><strong>${f.getRazaoSocial()}</strong></td>
-                        <td>${f.getCnpj()}</td>
-                        <td>${f.getEmail()}</td>
-                        <td>${f.getTelefones().join(" / ") || "—"}</td>
+                        <td><strong>${this.escaparHTML(f.getRazaoSocial())}</strong></td>
+                        <td>${this.escaparHTML(f.getCnpj())}</td>
+                        <td>${this.escaparHTML(f.getEmail())}</td>
+                        <td>${this.escaparHTML(f.getTelefones().join(" / ")) || "—"}</td>
                     </tr>`)
                 .join("");
         }
@@ -745,13 +772,13 @@ export class ControladorInterface {
                         .map((c) => {
                         const resumoItens = c
                             .getItens()
-                            .map((i) => `${i.getQtdCompra()}x ${i.getProduto().getDescricaoProduto()} (${this.formatarMoeda(i.getCustoUnitario())})`)
+                            .map((i) => `${i.getQtdCompra()}x ${this.escaparHTML(i.getProduto().getDescricaoProduto())} (${this.formatarMoeda(i.getCustoUnitario())})`)
                             .join(", ");
                         return `<tr>
                                   <td>#${c.getIdCompra()}</td>
-                                  <td>${c.getDataCompra()}</td>
-                                  <td>${c.getFornecedor().getRazaoSocial()}</td>
-                                  <td>${c.getFuncionarioResponsavel().getNomeFuncionario()}</td>
+                                  <td>${this.escaparHTML(c.getDataCompra())}</td>
+                                  <td>${this.escaparHTML(c.getFornecedor().getRazaoSocial())}</td>
+                                  <td>${this.escaparHTML(c.getFuncionarioResponsavel().getNomeFuncionario())}</td>
                                   <td>${resumoItens}</td>
                                   <td><strong>${this.formatarMoeda(c.getValorTotal())}</strong></td>
                               </tr>`;
@@ -764,7 +791,7 @@ export class ControladorInterface {
         if (selectCargo) {
             selectCargo.innerHTML = this.sistema
                 .listarCargos()
-                .map((c) => `<option value="${c.getIdCargo()}">${c.getNomeCargo()} (${this.formatarMoeda(c.getSalarioBase())})</option>`)
+                .map((c) => `<option value="${c.getIdCargo()}">${this.escaparHTML(c.getNomeCargo())} (${this.formatarMoeda(c.getSalarioBase())})</option>`)
                 .join("");
         }
         const tbodyFuncionarios = document.getElementById("tbody-lista-funcionarios");
@@ -773,12 +800,12 @@ export class ControladorInterface {
                 .listarFuncionarios()
                 .map((f) => `<tr>
                         <td>#${f.getIdFuncionario()}</td>
-                        <td><strong>${f.getNomeFuncionario()}</strong></td>
-                        <td>${f.getCpfFuncionario()}</td>
-                        <td><span class="badge badge-info">${f.getCargo().getNomeCargo()}</span></td>
+                        <td><strong>${this.escaparHTML(f.getNomeFuncionario())}</strong></td>
+                        <td>${this.escaparHTML(f.getCpfFuncionario())}</td>
+                        <td><span class="badge badge-info">${this.escaparHTML(f.getCargo().getNomeCargo())}</span></td>
                         <td>${this.formatarMoeda(f.getCargo().getSalarioBase())}</td>
-                        <td>${f.getDataAdmissao()}</td>
-                        <td>${f.getTelefones().join(" / ") || "—"}</td>
+                        <td>${this.escaparHTML(f.getDataAdmissao())}</td>
+                        <td>${this.escaparHTML(f.getTelefones().join(" / ")) || "—"}</td>
                     </tr>`)
                 .join("");
         }
@@ -786,7 +813,7 @@ export class ControladorInterface {
         if (selectRastreio) {
             selectRastreio.innerHTML = this.sistema
                 .listarFuncionarios()
-                .map((f) => `<option value="${f.getIdFuncionario()}" ${f.getIdFuncionario() === this.funcionarioRastreioId ? "selected" : ""}>${f.getNomeFuncionario()} (${f.getCargo().getNomeCargo()})</option>`)
+                .map((f) => `<option value="${f.getIdFuncionario()}" ${f.getIdFuncionario() === this.funcionarioRastreioId ? "selected" : ""}>${this.escaparHTML(f.getNomeFuncionario())} (${this.escaparHTML(f.getCargo().getNomeCargo())})</option>`)
                 .join("");
         }
         this.renderizarRastreabilidade();
@@ -807,7 +834,7 @@ export class ControladorInterface {
                 : dados.sessoesCaixa
                     .map((s) => `<li><strong>Sessão #${s.getIdSessao()}</strong> (Caixa 0${s
                     .getCaixa()
-                    .getNumeroCaixa()}) — Abertura: ${s.getDataAbertura()} | Inicial: ${this.formatarMoeda(s.getValorInicial())} | Status: ${s.estaAberta()
+                    .getNumeroCaixa()}) — Abertura: ${this.escaparHTML(s.getDataAbertura())} | Inicial: ${this.formatarMoeda(s.getValorInicial())} | Status: ${s.estaAberta()
                     ? "Aberta"
                     : `Fechada (${this.formatarMoeda(s.getValorFinal() || 0)})`}</li>`)
                     .join("")}
@@ -819,9 +846,9 @@ export class ControladorInterface {
                             ${dados.comprasRegistradas.length === 0
                 ? "<li>Nenhuma compra registrada.</li>"
                 : dados.comprasRegistradas
-                    .map((c) => `<li><strong>Compra #${c.getIdCompra()}</strong> (${c.getDataCompra()}) — ${c
+                    .map((c) => `<li><strong>Compra #${c.getIdCompra()}</strong> (${this.escaparHTML(c.getDataCompra())}) — ${this.escaparHTML(c
                     .getFornecedor()
-                    .getRazaoSocial()} — Total: ${this.formatarMoeda(c.getValorTotal())}</li>`)
+                    .getRazaoSocial())} — Total: ${this.formatarMoeda(c.getValorTotal())}</li>`)
                     .join("")}
                         </ul>
                     </div>
@@ -832,9 +859,9 @@ export class ControladorInterface {
                 ? "<li>Nenhuma movimentação realizada.</li>"
                 : dados.movimentacoesEstoque
                     .slice(0, 8)
-                    .map((m) => `<li><strong>[${m.getTipo()}]</strong> ${m.getQtdMovimentacao()}x ${m
+                    .map((m) => `<li><strong>[${m.getTipo()}]</strong> ${m.getQtdMovimentacao()}x ${this.escaparHTML(m
                     .getProduto()
-                    .getDescricaoProduto()} (${m.getDataHoraMov()})</li>`)
+                    .getDescricaoProduto())} (${this.escaparHTML(m.getDataHoraMov())})</li>`)
                     .join("")}
                         </ul>
                     </div>

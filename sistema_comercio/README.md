@@ -1,5 +1,83 @@
 # Sistema de Gerenciamento de Caixa, Estoque e Funcionários
 
+## Atualização local - 23/11/2026
+
+Esta etapa mantém os cinco módulos, o `index.html`, as classes TypeScript e o padrão
+Observer originais. O objetivo é uma preview local de demonstração para pequenos e
+médios comércios. O backlog das seções seguintes não constitui uma implementação
+de produção pronta.
+
+### Executar e testar
+
+Pré-requisito: Node.js com npm (ambiente validado: Node.js 24.20.0).
+
+```powershell
+cd sistema_comercio
+npm ci
+npm test
+npm run preview
+```
+
+`npm test` compila, atualiza `dist/app.bundle.js`, executa as 22 asserções originais
+e os 8 testes de regressão em `tests/regressoes.test.mjs`. A dependência TypeScript
+está declarada e fixada no `package-lock.json`.
+
+Abra <http://127.0.0.1:4173>. O servidor atende somente na máquina local e libera
+apenas HTML, CSS e bundle. Pare com `Ctrl+C` no terminal onde iniciou o servidor.
+Se a porta estiver ocupada: `$env:PORT=4174; npm run preview`.
+Para executar o bundle incluído sem instalar dependências: `node preview.mjs`.
+Para recompilar após alterar `src/`: `npm run build`, depois recarregue a página.
+O servidor não faz recarga automática.
+
+### Compartilhar com o grupo
+
+O ZIP de preview contém uma pasta `Trabalho-de-POO-Preview`. Extraia tudo e abra
+o `index.html` dessa pasta para testar sem instalar dependências. Para testar a
+partir do GitHub, use **Code > Download ZIP**, extraia e abra
+`sistema_comercio/index.html`. Não abra os arquivos de dentro do visualizador do ZIP.
+
+O [LEIA-ME.txt](LEIA-ME.txt) inclui um roteiro de vendas, compras, estoque e equipe.
+O [Iniciar-Preview.cmd](Iniciar-Preview.cmd) inicia o servidor opcional no Windows
+quando Node.js estiver instalado. Cada computador tem seus próprios dados de
+demonstração; não há sincronização. O `localStorage` em `file://` pode variar entre
+navegadores; use o servidor local para testar persistência de forma mais previsível.
+
+### Continuidade implementada
+
+- Busca de produtos por descrição, código e categoria, ignorando acentos; filtros
+  de estoque baixo e vencimento; contador e mensagem sem resultados.
+- Compra valida todos os itens antes de alterar estoque, custos e movimentos.
+- Valores `NaN`, infinitos e negativos são rejeitados nas validações numéricas de
+  domínio pertinentes; ajuste absoluto para zero registra zero, sem inventar uma unidade.
+- Fechamento com valor inválido mantém a sessão aberta. Restauração reconcilia
+  caixa ocupado e preserva o operador selecionado.
+- Falha ao restaurar referências não mistura estado parcial com dados demo.
+- Dados de cadastros interpolados nas tabelas e opções são escapados como texto.
+- Restauração demo solicita confirmação; aviso de dados fictícios, foco visível,
+  notificações acessíveis e ajustes de layout em telas pequenas.
+
+### O que ainda falta
+
+| Prioridade | Pendência | Consequência |
+| --- | --- | --- |
+| Próxima etapa de produção | SQL físico das 18 tabelas, Repository/DAO e transações | `localStorage` não é banco compartilhado nem garante ACID |
+| Próxima etapa de produção | API, login com hash de senha e permissões por cargo | Seletor de operador é apenas demonstração, sem controle real de acesso |
+| Operação completa | Editar/inativar cadastros e cancelar/estornar vendas e compras | UI atual permite cadastrar e operar os fluxos existentes |
+| Operação completa | Gerenciar caixas físicos e imprimir comprovantes | Ainda não disponível na interface |
+| Relatórios | Filtros de vendas/movimentos por data, relatórios e conferência por forma de pagamento | Busca implementada nesta etapa cobre apenas catálogo de produtos |
+| Robustez de produção | Backup/importação, recuperação de dados inválidos e conflitos entre abas | Dados locais podem ser perdidos ao limpar o navegador ou restaurar a demo |
+| Regras complementares | CPF/CNPJ únicos e validados, política para venda de produtos vencidos e arredondamentos financeiros | Alertas e validações atuais não substituem essas regras de produção |
+
+Use apenas dados fictícios: senhas do protótipo permanecem em texto no armazenamento
+local. O saldo esperado mantém a regra original (inicial + vendas de todas as formas),
+sem representar exclusivamente o dinheiro físico da gaveta. Um estado local inválido
+volta à demonstração; não há recuperação garantida dos dados antigos.
+
+O diário técnico local distingue diagnóstico, execução, revisão independente e
+limitações e é mantido separadamente da distribuição pública. A cópia de trabalho
+teve origem em um export sem `.git`; atualizações remotas preservam o histórico do
+repositório existente. Compartilhar o pacote não publica uma aplicação hospedada.
+
 ---
 
 ## 1. Sobre o Projeto e Alinhamento com as ODS
@@ -16,7 +94,7 @@ Este sistema integra **Frente de Caixa (PDV)**, **Controle de Estoque e Compras*
 ## 2. O Que Já Está Pronto Até Agora (Status Atual)
 
 ### 2.1. Modelagem Conceitual e Esquema Lógico do Banco de Dados
-O modelo de dados foi inteiramente projetado com **16 entidades/tabelas e seus relacionamentos**:
+O modelo lógico documentado lista **18 entidades/tabelas e seus relacionamentos**; o esquema SQL físico permanece pendente:
 1. `Categoria` (`ID_Categoria`, `Nome_Categoria`)
 2. `Cargo` (`ID_Cargo`, `Nome_Cargo`, `Salario_Base`)
 3. `Funcionario` (`ID_Funcionario`, `CPF_Funcionario`, `Nome_Funcionario`, `Senha`, `Data_Admissao`, `#ID_Cargo`)
@@ -41,7 +119,7 @@ O modelo de dados foi inteiramente projetado com **16 entidades/tabelas e seus r
 ### 2.2. Arquitetura Orientada a Objetos em TypeScript (`src/`)
 Toda a lógica do sistema foi implementada em **TypeScript (`strict: true`)**, aplicando os pilares de POO:
 - **Encapsulamento e Validação de Domínio (`src/modelos/`):**
-  - Todos os atributos são `private`, acessados e modificados por métodos de domínio e *getters/setters* com validação (impede valores negativos, estoque insuficiente, vendas em sessão fechada ou pagamento menor que o valor da venda).
+  - Atributos de domínio são `private`, acessados e modificados por métodos e *getters/setters* com validação de valores negativos, estoque insuficiente, sessão fechada e pagamento insuficiente. Isso não equivale a validação completa de produção.
   - Retorno de cópias defensivas em listas internas (`getItens()`, `getPagamentos()`, `getTelefones()`, `getFornecedores()`).
 - **Composição vs. Associação:**
   - **Composição:** `Venda` compõe `ItemVenda` e `PagamentoVenda`; `Compra` compõe `ItemCompra`.
@@ -80,7 +158,7 @@ Para evoluir do protótipo atual (que roda 100% no navegador com persistência e
 
 ### 3.1. Banco de Dados Relacional em SQL (DDL, DML e Persistência Real)
 Atualmente os dados são salvos em JSON no `localStorage`. Para o banco de dados estar 100% implementado, falta:
-- [ ] **Script DDL (`schema.sql`):** Criar o script SQL físico (PostgreSQL, MySQL ou SQLite) com os comandos `CREATE TABLE` para todas as 18 tabelas do esquema lógico (14 entidades + 2 tabelas de telefones multivalorados + 2 tabelas associativas `Fornece` e `Paga_Com` + `Itens_Venda` + `Contem_Compra`), definindo:
+- [ ] **Script DDL (`schema.sql`):** Criar o script SQL físico (PostgreSQL, MySQL ou SQLite) com os comandos `CREATE TABLE` para as 18 tabelas listadas no esquema lógico, definindo:
   - Chaves primárias simples e compostas (`PRIMARY KEY`).
   - Chaves estrangeiras (`FOREIGN KEY`) com regras de integridade referencial (`ON DELETE RESTRICT` / `ON UPDATE CASCADE`).
   - Restrições de domínio (`CHECK (Preco_Venda >= 0)`, `CHECK (Qtd_Estoque >= 0)`, `UNIQUE (CPF_Funcionario)`, `UNIQUE (CNPJ)`).
