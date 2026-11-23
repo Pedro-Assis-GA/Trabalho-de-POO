@@ -19,7 +19,7 @@ function executarTestesDeFluxo(): void {
     // 1. Verificar dados iniciais e entidades
     afirmar(sistema.listarCategorias().length >= 4, "Categorias iniciais carregadas.");
     afirmar(sistema.listarCargos().length >= 3, "Cargos iniciais carregados.");
-    afirmar(sistema.listarFuncionarios().length >= 3, "Funcionários iniciais (Matheus, Pietro, Victor) carregados.");
+    afirmar(sistema.listarFuncionarios().length >= 3, "Funcionários iniciais carregados.");
     afirmar(sistema.listarFornecedores().length >= 2, "Fornecedores iniciais carregados.");
     afirmar(sistema.listarProdutos().length >= 5, "Produtos iniciais carregados.");
     afirmar(sistema.listarFormasPagamento().length === 4, "Formas de pagamento carregadas.");
@@ -116,10 +116,10 @@ function executarTestesDeFluxo(): void {
     sistema.realizarAjusteEstoque("7891000500999", TipoMovimentacao.SAIDA, 1, 3);
     afirmar(pao.getQtdEstoque() === 20, "Saída manual de estoque reduziu quantidade para 20.");
 
-    const rastreioVictor = sistema.obterRastreabilidadeFuncionario(3);
+    const rastreioEstoquista = sistema.obterRastreabilidadeFuncionario(3);
     afirmar(
-        rastreioVictor.comprasRegistradas.length >= 2 && rastreioVictor.movimentacoesEstoque.length >= 2,
-        "Rastreabilidade do funcionário Victor Canassa retornou todas as compras e movimentações realizadas."
+        rastreioEstoquista.comprasRegistradas.length >= 2 && rastreioEstoquista.movimentacoesEstoque.length >= 2,
+        "Rastreabilidade do funcionário retornou todas as compras e movimentações realizadas."
     );
 
     console.log("\n==================================================");

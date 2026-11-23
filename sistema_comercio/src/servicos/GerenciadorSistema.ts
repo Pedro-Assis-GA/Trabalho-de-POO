@@ -589,35 +589,35 @@ export class GerenciadorSistema {
         const cargoEstoquista = new Cargo(3, "Auxiliar de Estoque", 2250.0);
         this.cargos.push(cargoGerente, cargoCaixa, cargoEstoquista);
 
-        const funcMatheus = new Funcionario(
+        const funcGerente = new Funcionario(
             1,
             "412.885.190-01",
-            "Matheus Eduardo",
+            "Carlos Mendes",
             "1234",
             "2025-02-10",
             cargoGerente,
             ["(19) 99811-2233", "(19) 3456-7890"]
         );
-        const funcPietro = new Funcionario(
+        const funcCaixa = new Funcionario(
             2,
             "329.741.608-55",
-            "Pietro Rocatto",
+            "Fernanda Oliveira",
             "1234",
             "2025-03-15",
             cargoCaixa,
             ["(19) 99722-3344"]
         );
-        const funcVictor = new Funcionario(
+        const funcEstoquista = new Funcionario(
             3,
             "518.902.314-22",
-            "Victor Canassa",
+            "Roberto Santos",
             "1234",
             "2025-04-01",
             cargoEstoquista,
             ["(19) 99633-4455"]
         );
-        this.funcionarios.push(funcMatheus, funcPietro, funcVictor);
-        this.funcionarioLogado = funcMatheus;
+        this.funcionarios.push(funcGerente, funcCaixa, funcEstoquista);
+        this.funcionarioLogado = funcGerente;
 
         const fornAlimentos = new Fornecedor(
             1,

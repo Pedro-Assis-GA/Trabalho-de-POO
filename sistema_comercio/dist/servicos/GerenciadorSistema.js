@@ -378,11 +378,11 @@ export class GerenciadorSistema {
         const cargoCaixa = new Cargo(2, "Operador de Caixa", 2150.0);
         const cargoEstoquista = new Cargo(3, "Auxiliar de Estoque", 2250.0);
         this.cargos.push(cargoGerente, cargoCaixa, cargoEstoquista);
-        const funcMatheus = new Funcionario(1, "412.885.190-01", "Matheus Eduardo", "1234", "2025-02-10", cargoGerente, ["(19) 99811-2233", "(19) 3456-7890"]);
-        const funcPietro = new Funcionario(2, "329.741.608-55", "Pietro Rocatto", "1234", "2025-03-15", cargoCaixa, ["(19) 99722-3344"]);
-        const funcVictor = new Funcionario(3, "518.902.314-22", "Victor Canassa", "1234", "2025-04-01", cargoEstoquista, ["(19) 99633-4455"]);
-        this.funcionarios.push(funcMatheus, funcPietro, funcVictor);
-        this.funcionarioLogado = funcMatheus;
+        const funcGerente = new Funcionario(1, "412.885.190-01", "Carlos Mendes", "1234", "2025-02-10", cargoGerente, ["(19) 99811-2233", "(19) 3456-7890"]);
+        const funcCaixa = new Funcionario(2, "329.741.608-55", "Fernanda Oliveira", "1234", "2025-03-15", cargoCaixa, ["(19) 99722-3344"]);
+        const funcEstoquista = new Funcionario(3, "518.902.314-22", "Roberto Santos", "1234", "2025-04-01", cargoEstoquista, ["(19) 99633-4455"]);
+        this.funcionarios.push(funcGerente, funcCaixa, funcEstoquista);
+        this.funcionarioLogado = funcGerente;
         const fornAlimentos = new Fornecedor(1, "12.345.678/0001-90", "Distribuidora Paulista de Alimentos Ltda", "vendas@distribuidorapaulista.com.br", ["(11) 4002-8922", "(11) 98877-6655"]);
         const fornLaticinios = new Fornecedor(2, "98.765.432/0001-10", "Laticínios Vale Verde S.A.", "contato@valeverde.com.br", ["(19) 3322-1100"]);
         this.fornecedores.push(fornAlimentos, fornLaticinios);
