@@ -1,0 +1,604 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Sistema de Gestão Comercial — Caixa, Estoque e Equipe (POO TypeScript)</title>
+    <link rel="stylesheet" href="estilos.css" />
+</head>
+<body>
+    <!-- BARRA SUPERIOR -->
+    <header class="topbar">
+        <div class="topbar-brand">
+            <h1>Sistema de Gerenciamento Comercial — POO TypeScript</h1>
+            <p>Matheus Eduardo (187575) • Pietro Rocatto (185317) • Victor Canassa (185333)</p>
+        </div>
+        <div class="topbar-controls">
+            <div class="operador-selector">
+                <label for="select-operador-ativo">Funcionário Operador:</label>
+                <select id="select-operador-ativo"></select>
+                <span id="badge-cargo-operador" class="badge badge-info"></span>
+            </div>
+            <button type="button" id="btn-resetar-dados" class="btn btn-secondary">
+                Restaurar Dados Demo
+            </button>
+        </div>
+    </header>
+
+    <!-- NAVEGAÇÃO DE MÓDULOS -->
+    <nav class="nav-tabs">
+        <button type="button" class="nav-btn active" data-tab="dashboard">1. Visão Geral & Alertas</button>
+        <button type="button" class="nav-btn" data-tab="pdv">2. Frente de Caixa (PDV)</button>
+        <button type="button" class="nav-btn" data-tab="estoque">3. Estoque & Produtos</button>
+        <button type="button" class="nav-btn" data-tab="compras">4. Compras & Fornecedores</button>
+        <button type="button" class="nav-btn" data-tab="equipe">5. Funcionários & Rastreabilidade</button>
+    </nav>
+
+    <main class="main-container">
+        <!-- ABA 1: VISÃO GERAL & ALERTAS -->
+        <section id="tab-dashboard" class="tab-section active">
+            <div class="kpi-grid">
+                <div class="kpi-card">
+                    <div class="kpi-label">Total em Vendas</div>
+                    <div id="kpi-total-vendas" class="kpi-value">R$ 0,00</div>
+                    <div id="kpi-qtd-vendas" class="kpi-sub">0 vendas</div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-label">Saldo Esperado no Caixa</div>
+                    <div id="kpi-saldo-caixa" class="kpi-value">R$ 0,00</div>
+                    <div id="kpi-status-sessao" class="kpi-sub">Sessão</div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-label">Abaixo do Estoque Mínimo</div>
+                    <div id="kpi-estoque-critico" class="kpi-value">0</div>
+                    <div class="kpi-sub">Reposição recomendada</div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-label">Produtos Vencidos (ODS 11)</div>
+                    <div id="kpi-produtos-vencidos" class="kpi-value">0</div>
+                    <div class="kpi-sub">Prevenção de desperdício</div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2>Alertas de Estoque Mínimo e Validade de Produtos</h2>
+                <div class="table-wrapper">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Cód. Barras</th>
+                                <th>Produto</th>
+                                <th>Categoria</th>
+                                <th>Qtd. Atual</th>
+                                <th>Estoque Mín.</th>
+                                <th>Situação</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tbody-alertas-estoque"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2>Últimas Movimentações de Estoque (Rastreabilidade)</h2>
+                <div class="table-wrapper">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Data/Hora</th>
+                                <th>Tipo</th>
+                                <th>Produto</th>
+                                <th>Quantidade</th>
+                                <th>Funcionário Responsável</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tbody-ultimas-movimentacoes"></tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- ABA 2: FRENTE DE CAIXA (PDV) -->
+        <section id="tab-pdv" class="tab-section">
+            <div class="card">
+                <h2>Controle de Sessão de Caixa (Abertura e Fechamento)</h2>
+                <div id="painel-abrir-sessao">
+                    <form id="form-abrir-sessao" class="form-grid">
+                        <div class="form-group">
+                            <label for="sessao-caixa-id">Caixa Disponível</label>
+                            <select id="sessao-caixa-id" required></select>
+                        </div>
+                        <div class="form-group">
+                            <label for="sessao-valor-inicial">Valor Inicial de Troco (R$)</label>
+                            <input type="number" id="sessao-valor-inicial" step="0.01" min="0" value="100.00" required />
+                        </div>
+                        <div class="form-group" style="justify-content: flex-end;">
+                            <button type="submit" class="btn btn-primary">Abrir Sessão de Caixa</button>
+                        </div>
+                    </form>
+                </div>
+
+                <div id="painel-sessao-ativa" style="display: none;">
+                    <p style="margin-bottom: 10px;"><strong id="info-sessao-atual"></strong> — Abertura: <span id="info-sessao-abertura"></span></p>
+                    <div class="resumo-financeiro">
+                        <div class="resumo-item">
+                            <span>Valor Inicial</span>
+                            <strong id="info-sessao-inicial">R$ 0,00</strong>
+                        </div>
+                        <div class="resumo-item">
+                            <span>Total de Vendas na Sessão</span>
+                            <strong id="info-sessao-vendas">R$ 0,00</strong>
+                        </div>
+                        <div class="resumo-item">
+                            <span>Valor Final Esperado</span>
+                            <strong id="info-sessao-esperado">R$ 0,00</strong>
+                        </div>
+                        <div style="display: flex; gap: 8px; align-items: center;">
+                            <input type="number" id="sessao-valor-conferido" step="0.01" min="0" placeholder="Valor conferido (opcional)" style="padding: 8px; border: 1px solid #cbd5e1; border-radius: 6px;" />
+                            <button type="button" id="btn-fechar-sessao-atual" class="btn btn-danger">Fechar Caixa</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="grid-equal">
+                <!-- CARRINHO DE ITENS -->
+                <div class="card">
+                    <h3>1. Itens da Venda (Itens_Venda)</h3>
+                    <form id="form-add-item-venda" class="form-grid">
+                        <div class="form-group">
+                            <label for="venda-produto-codigo">Produto</label>
+                            <select id="venda-produto-codigo" required></select>
+                        </div>
+                        <div class="form-group">
+                            <label for="venda-produto-qtd">Quantidade</label>
+                            <input type="number" id="venda-produto-qtd" step="1" min="1" value="1" required />
+                        </div>
+                        <div class="form-group" style="justify-content: flex-end;">
+                            <button type="submit" class="btn btn-primary">+ Adicionar Item</button>
+                        </div>
+                    </form>
+
+                    <div class="table-wrapper">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Produto</th>
+                                    <th>Qtd</th>
+                                    <th>Unitário</th>
+                                    <th>Subtotal</th>
+                                    <th>Ação</th>
+                                </tr>
+                            </thead>
+                            <tbody id="tbody-carrinho-venda"></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- PAGAMENTO E CLIENTE -->
+                <div class="card">
+                    <h3>2. Cliente e Formas de Pagamento (Paga_Com)</h3>
+                    <div class="form-group">
+                        <label for="venda-cliente-id">Cliente Identificado (Opcional)</label>
+                        <select id="venda-cliente-id"></select>
+                    </div>
+
+                    <form id="form-add-pagamento-venda" class="form-grid">
+                        <div class="form-group">
+                            <label for="venda-forma-pag">Forma de Pagamento</label>
+                            <select id="venda-forma-pag" required></select>
+                        </div>
+                        <div class="form-group">
+                            <label for="venda-valor-pag">Valor Pago (R$)</label>
+                            <input type="number" id="venda-valor-pag" step="0.01" min="0.01" required />
+                        </div>
+                        <div class="form-group" style="justify-content: flex-end;">
+                            <button type="submit" class="btn btn-secondary">+ Adicionar Pagamento</button>
+                        </div>
+                    </form>
+
+                    <div class="table-wrapper">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Forma de Pagamento</th>
+                                    <th>Valor Pago</th>
+                                    <th>Ação</th>
+                                </tr>
+                            </thead>
+                            <tbody id="tbody-pagamentos-venda"></tbody>
+                        </table>
+                    </div>
+
+                    <div class="resumo-financeiro">
+                        <div class="resumo-item">
+                            <span>Valor Total da Venda</span>
+                            <strong id="resumo-venda-total">R$ 0,00</strong>
+                        </div>
+                        <div class="resumo-item">
+                            <span>Total Pago</span>
+                            <strong id="resumo-venda-pago">R$ 0,00</strong>
+                        </div>
+                        <div class="resumo-item">
+                            <span>Troco</span>
+                            <strong id="resumo-venda-troco">R$ 0,00</strong>
+                        </div>
+                    </div>
+
+                    <div style="display: flex; gap: 10px; justify-content: flex-end;">
+                        <button type="button" id="btn-limpar-venda" class="btn btn-secondary">Limpar Venda</button>
+                        <button type="button" id="btn-finalizar-venda" class="btn btn-success">Finalizar Venda</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="grid-2col">
+                <div class="card">
+                    <h3>Cadastrar Novo Cliente</h3>
+                    <form id="form-novo-cliente">
+                        <div class="form-group">
+                            <label for="cli-nome">Nome do Cliente</label>
+                            <input type="text" id="cli-nome" placeholder="Ex: João Silva" required />
+                        </div>
+                        <div class="form-group">
+                            <label for="cli-cpf">CPF</label>
+                            <input type="text" id="cli-cpf" placeholder="000.000.000-00" required />
+                        </div>
+                        <div class="form-group">
+                            <label for="cli-telefone">Telefone</label>
+                            <input type="text" id="cli-telefone" placeholder="(19) 99999-0000" required />
+                        </div>
+                        <button type="submit" class="btn btn-primary">Salvar Cliente</button>
+                    </form>
+                </div>
+
+                <div class="card">
+                    <h3>Histórico de Vendas Registradas</h3>
+                    <div class="table-wrapper">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Data/Hora</th>
+                                    <th>Sessão / Operador</th>
+                                    <th>Cliente</th>
+                                    <th>Itens</th>
+                                    <th>Pagamentos</th>
+                                    <th>Total</th>
+                                </tr>
+                            </thead>
+                            <tbody id="tbody-historico-vendas"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ABA 3: ESTOQUE E PRODUTOS -->
+        <section id="tab-estoque" class="tab-section">
+            <div class="grid-equal">
+                <div class="card">
+                    <h3>Cadastrar Novo Produto</h3>
+                    <form id="form-novo-produto">
+                        <div class="form-grid">
+                            <div class="form-group">
+                                <label for="prod-codigo">Código de Barras (PK)</label>
+                                <input type="text" id="prod-codigo" placeholder="7891000999000" required />
+                            </div>
+                            <div class="form-group">
+                                <label for="prod-descricao">Descrição do Produto</label>
+                                <input type="text" id="prod-descricao" placeholder="Café Torrado 500g" required />
+                            </div>
+                        </div>
+                        <div class="form-grid">
+                            <div class="form-group">
+                                <label for="prod-custo">Custo (R$)</label>
+                                <input type="number" id="prod-custo" step="0.01" min="0" value="12.00" required />
+                            </div>
+                            <div class="form-group">
+                                <label for="prod-preco">Preço Venda (R$)</label>
+                                <input type="number" id="prod-preco" step="0.01" min="0" value="18.90" required />
+                            </div>
+                            <div class="form-group">
+                                <label for="prod-unidade">Unidade</label>
+                                <input type="text" id="prod-unidade" value="UN" required />
+                            </div>
+                        </div>
+                        <div class="form-grid">
+                            <div class="form-group">
+                                <label for="prod-estoque">Qtd. Estoque Inicial</label>
+                                <input type="number" id="prod-estoque" step="1" min="0" value="20" required />
+                            </div>
+                            <div class="form-group">
+                                <label for="prod-minimo">Estoque Mínimo</label>
+                                <input type="number" id="prod-minimo" step="1" min="0" value="5" required />
+                            </div>
+                            <div class="form-group">
+                                <label for="prod-validade">Data Validade (Opcional)</label>
+                                <input type="date" id="prod-validade" />
+                            </div>
+                        </div>
+                        <div class="form-grid">
+                            <div class="form-group">
+                                <label for="prod-categoria">Categoria</label>
+                                <select id="prod-categoria" required></select>
+                            </div>
+                            <div class="form-group">
+                                <label for="prod-fornecedor">Fornecedor Principal</label>
+                                <select id="prod-fornecedor"></select>
+                            </div>
+                        </div>
+                        <button type="submit" class="btn btn-primary">Cadastrar Produto</button>
+                    </form>
+                </div>
+
+                <div>
+                    <div class="card">
+                        <h3>Movimentação / Ajuste Manual de Estoque</h3>
+                        <form id="form-movimentacao-estoque">
+                            <div class="form-group">
+                                <label for="mov-produto-codigo">Produto</label>
+                                <select id="mov-produto-codigo" required></select>
+                            </div>
+                            <div class="form-grid">
+                                <div class="form-group">
+                                    <label for="mov-tipo">Tipo de Movimentação</label>
+                                    <select id="mov-tipo" required>
+                                        <option value="ENTRADA">ENTRADA (Soma ao estoque)</option>
+                                        <option value="SAIDA">SAIDA (Baixa por perda/avaria)</option>
+                                        <option value="AJUSTE">AJUSTE (Define saldo exato)</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label for="mov-qtd">Quantidade</label>
+                                    <input type="number" id="mov-qtd" step="1" min="1" value="1" required />
+                                </div>
+                            </div>
+                            <button type="submit" class="btn btn-secondary">Registrar Movimentação</button>
+                        </form>
+                    </div>
+
+                    <div class="card">
+                        <h3>Nova Categoria de Produto</h3>
+                        <form id="form-nova-categoria" class="form-grid">
+                            <div class="form-group">
+                                <label for="cat-nome">Nome da Categoria</label>
+                                <input type="text" id="cat-nome" placeholder="Ex: Hortifruti" required />
+                            </div>
+                            <div class="form-group" style="justify-content: flex-end;">
+                                <button type="submit" class="btn btn-primary">Adicionar Categoria</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2>Catálogo Completo de Produtos no Estoque</h2>
+                <div class="table-wrapper">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Cód. Barras</th>
+                                <th>Descrição</th>
+                                <th>Categoria</th>
+                                <th>Custo</th>
+                                <th>Preço Venda</th>
+                                <th>Estoque / Status</th>
+                                <th>Validade</th>
+                                <th>Fornecedores (Fornece)</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tbody-lista-produtos"></tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- ABA 4: COMPRAS E FORNECEDORES -->
+        <section id="tab-compras" class="tab-section">
+            <div class="grid-equal">
+                <div class="card">
+                    <h3>Registrar Compra de Fornecedor (Compra & Contem_Compra)</h3>
+                    <div class="form-group">
+                        <label for="compra-fornecedor-id">Fornecedor</label>
+                        <select id="compra-fornecedor-id" required></select>
+                    </div>
+
+                    <form id="form-add-item-compra" class="form-grid">
+                        <div class="form-group">
+                            <label for="compra-produto-codigo">Produto</label>
+                            <select id="compra-produto-codigo" required></select>
+                        </div>
+                        <div class="form-group">
+                            <label for="compra-qtd">Qtd Comprada</label>
+                            <input type="number" id="compra-qtd" step="1" min="1" value="10" required />
+                        </div>
+                        <div class="form-group">
+                            <label for="compra-custo">Custo Unit. (R$)</label>
+                            <input type="number" id="compra-custo" step="0.01" min="0.01" value="5.00" required />
+                        </div>
+                        <div class="form-group" style="justify-content: flex-end;">
+                            <button type="submit" class="btn btn-secondary">+ Incluir Item</button>
+                        </div>
+                    </form>
+
+                    <div class="table-wrapper">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Produto</th>
+                                    <th>Qtd</th>
+                                    <th>Custo Unit.</th>
+                                    <th>Subtotal</th>
+                                    <th>Ação</th>
+                                </tr>
+                            </thead>
+                            <tbody id="tbody-itens-nova-compra"></tbody>
+                        </table>
+                    </div>
+
+                    <div class="resumo-financeiro">
+                        <div class="resumo-item">
+                            <span>Valor Total da Compra</span>
+                            <strong id="resumo-compra-total">R$ 0,00</strong>
+                        </div>
+                        <button type="button" id="btn-finalizar-compra" class="btn btn-success">
+                            Concluir Compra e Abastecer Estoque
+                        </button>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <h3>Cadastrar Novo Fornecedor</h3>
+                    <form id="form-novo-fornecedor">
+                        <div class="form-group">
+                            <label for="forn-razao">Razão Social</label>
+                            <input type="text" id="forn-razao" placeholder="Atacadão Cerealista Ltda" required />
+                        </div>
+                        <div class="form-grid">
+                            <div class="form-group">
+                                <label for="forn-cnpj">CNPJ</label>
+                                <input type="text" id="forn-cnpj" placeholder="00.000.000/0001-00" required />
+                            </div>
+                            <div class="form-group">
+                                <label for="forn-email">E-mail</label>
+                                <input type="email" id="forn-email" placeholder="contato@fornecedor.com.br" required />
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label for="forn-telefones">Telefones (Telefone_Fornecedor — separe por vírgula)</label>
+                            <input type="text" id="forn-telefones" placeholder="(11) 3333-4444, (11) 98888-7777" required />
+                        </div>
+                        <button type="submit" class="btn btn-primary">Salvar Fornecedor</button>
+                    </form>
+
+                    <h3 style="margin-top: 22px;">Fornecedores Cadastrados</h3>
+                    <div class="table-wrapper">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Razão Social</th>
+                                    <th>CNPJ</th>
+                                    <th>E-mail</th>
+                                    <th>Telefones</th>
+                                </tr>
+                            </thead>
+                            <tbody id="tbody-lista-fornecedores"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2>Histórico de Compras de Reposição</h2>
+                <div class="table-wrapper">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>ID Compra</th>
+                                <th>Data/Hora</th>
+                                <th>Fornecedor</th>
+                                <th>Funcionário Responsável</th>
+                                <th>Itens Adquiridos</th>
+                                <th>Valor Total</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tbody-historico-compras"></tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- ABA 5: FUNCIONÁRIOS, CARGOS E RASTREABILIDADE -->
+        <section id="tab-equipe" class="tab-section">
+            <div class="grid-equal">
+                <div class="card">
+                    <h3>Cadastrar Novo Funcionário</h3>
+                    <form id="form-novo-funcionario">
+                        <div class="form-grid">
+                            <div class="form-group">
+                                <label for="func-nome">Nome Completo</label>
+                                <input type="text" id="func-nome" required />
+                            </div>
+                            <div class="form-group">
+                                <label for="func-cpf">CPF</label>
+                                <input type="text" id="func-cpf" placeholder="000.000.000-00" required />
+                            </div>
+                        </div>
+                        <div class="form-grid">
+                            <div class="form-group">
+                                <label for="func-cargo">Cargo</label>
+                                <select id="func-cargo" required></select>
+                            </div>
+                            <div class="form-group">
+                                <label for="func-admissao">Data de Admissão</label>
+                                <input type="date" id="func-admissao" value="2026-11-09" required />
+                            </div>
+                            <div class="form-group">
+                                <label for="func-senha">Senha de Acesso</label>
+                                <input type="password" id="func-senha" value="1234" required />
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label for="func-telefones">Telefones (Telefone_Funcionario — separe por vírgula)</label>
+                            <input type="text" id="func-telefones" placeholder="(19) 99999-1111, (19) 3222-3333" required />
+                        </div>
+                        <button type="submit" class="btn btn-primary">Cadastrar Funcionário</button>
+                    </form>
+                </div>
+
+                <div class="card">
+                    <h3>Cadastrar Novo Cargo (ODS 8)</h3>
+                    <form id="form-novo-cargo">
+                        <div class="form-group">
+                            <label for="cargo-nome">Nome do Cargo</label>
+                            <input type="text" id="cargo-nome" placeholder="Ex: Fiscal de Loja" required />
+                        </div>
+                        <div class="form-group">
+                            <label for="cargo-salario">Salário Base (R$)</label>
+                            <input type="number" id="cargo-salario" step="0.01" min="0" value="2500.00" required />
+                        </div>
+                        <button type="submit" class="btn btn-primary">Salvar Cargo</button>
+                    </form>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2>Quadro de Funcionários e Cargos</h2>
+                <div class="table-wrapper">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Nome</th>
+                                <th>CPF</th>
+                                <th>Cargo</th>
+                                <th>Salário Base</th>
+                                <th>Admissão</th>
+                                <th>Telefones</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tbody-lista-funcionarios"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2>Auditoria e Rastreabilidade por Funcionário</h2>
+                <div class="form-group" style="max-width: 420px;">
+                    <label for="select-rastreio-funcionario">Selecione o Funcionário para inspecionar operações:</label>
+                    <select id="select-rastreio-funcionario"></select>
+                </div>
+                <div id="painel-rastreabilidade-detalhes"></div>
+            </div>
+        </section>
+    </main>
+
+    <div id="toast-container"></div>
+
+    <script src="dist/app.bundle.js"></script>
+</body>
+</html>

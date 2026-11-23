@@ -1,0 +1,10 @@
+{
+  "name": "sistema-comercio-poo",
+  "version": "1.0.0",
+  "description": "Sistema de Gerenciamento de Caixa, Estoque e Funcionários em TypeScript (POO)",
+  "type": "module",
+  "scripts": {
+    "build": "tsc && node gerar_bundle.mjs",
+    "test": "node dist/teste_fluxo.js"
+  }
+}
