@@ -1,4 +1,5 @@
 import test from 'node:test';
+import { prepararOperadorCompleto } from './apoio-permissoes.mjs';
 import assert from 'node:assert/strict';
 import { GerenciadorSistema } from '../dist/servicos/GerenciadorSistema.js';
 import { TipoMovimentacao, StatusCaixa } from '../dist/modelos/Entidades.js';
@@ -9,7 +10,7 @@ function memoryStorage() {
 }
 function sistema() {
     Object.defineProperty(globalThis, 'localStorage', { value: memoryStorage(), configurable: true });
-    return new GerenciadorSistema();
+    return prepararOperadorCompleto(new GerenciadorSistema());
 }
 const codigo = '7891000100101';
 
@@ -73,7 +74,12 @@ test('estado com referência inválida retorna à demonstração sem duplicar en
 
 test('operador escolhido e operações de compra/venda sobrevivem à restauração', () => {
     const s = sistema();
+    // A nova política exige autorização e uma sessão do próprio funcionário.
+    s.definirFuncionarioAtivo(1);
+    s.alterarAutorizacaoCaixa(3, true, 'Cobertura autorizada para teste de persistência');
+    s.fecharSessaoCaixa(s.obterSessaoAbertaAtual().getIdSessao());
     s.definirFuncionarioAtivo(3);
+    s.abrirSessaoCaixa(1, 3, 100);
     s.registrarCompra(1, 3, [{ codigoBarras: codigo, qtdCompra: 3, custoUnitario: 21 }]);
     s.registrarVenda(s.obterSessaoAbertaAtual().getIdSessao(), [{ codigoBarras: codigo, qtdVenda: 1 }], [{ idForma: 2, valorPago: 28.90 }]);
     const estoque = s.buscarProdutoPorCodigo(codigo).getQtdEstoque();

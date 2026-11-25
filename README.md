@@ -41,13 +41,27 @@ npm run preview
 ```
 
 Ambiente validado: Node.js 24.20.0 e TypeScript 6.0.3. `npm test` recompila e
-executa as 22 asserções originais e 8 testes de regressão. Após editar o TypeScript,
+executa as 22 asserções originais e 72 testes de regressão/regras de negócio. Após editar o TypeScript,
 execute `npm run build` e recarregue a página.
 
 ## Escopo atual
 
 Busca e filtros de produtos, persistência local e correções de integridade estão
-implementados. SQL, API, login real, permissões e operações complementares ainda
+implementados. SQL, API, login real, permissões gerais e operações complementares ainda
 são pendências de produção. Veja o [diagnóstico completo](sistema_comercio/README.md).
+
+Validade pode ser corrigida em **Estoque > Corrigir validade cadastrada**, com motivo
+e histórico do responsável. Os alertas têm atalhos **Corrigir data** e **Dar baixa**.
+A baixa exige confirmar a SAIDA; não altera a data. Correção cadastral não prolonga
+a validade real, e produtos ainda vencidos continuam bloqueados para venda.
+
+Cargos têm seleção explícita de módulos: **Caixa, Estoque, Compras e Equipe**.
+Um gerente pode complementar o cargo em **Equipe > Autorizações por módulo**;
+concessão/revogação têm motivo e histórico por módulo. A preview continua usando
+seleção livre de identidade, sem autenticação real. Gerente possui todos os módulos;
+colaboradores não acessam abas sem permissão. O PDV permite cadastrar caixas, manter
+sessões simultâneas e escolher **Caixa desta venda**. Cada venda identifica caixa e operador.
+Produto/fornecedor podem ser removidos das novas operações, preservando os históricos;
+produto exige saldo zero. Com saldo zero, a validade aparece como **---**, sem apagar a data.
 
 O diário técnico cumulativo é mantido separadamente da distribuição pública.

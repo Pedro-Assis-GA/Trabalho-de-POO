@@ -1,5 +1,6 @@
 import {
     Categoria,
+    Documento,
     EntidadeIdentificavel,
     Fornecedor,
     Funcionario,
@@ -7,6 +8,7 @@ import {
 } from "./Entidades.js";
 
 export class Produto implements EntidadeIdentificavel<string> {
+    private ativo: boolean;
     private codigoBarras: string;
     private descricaoProduto: string;
     private precoVenda: number;
@@ -28,7 +30,8 @@ export class Produto implements EntidadeIdentificavel<string> {
         estoqueMinimo: number,
         categoria: Categoria,
         dataValidade?: string,
-        fornecedores: Fornecedor[] = []
+        fornecedores: Fornecedor[] = [],
+        ativo: boolean = true
     ) {
         if (!codigoBarras || codigoBarras.trim() === "") {
             throw new Error("O código de barras do produto é obrigatório.");
@@ -51,7 +54,9 @@ export class Produto implements EntidadeIdentificavel<string> {
         this.qtdEstoque = qtdEstoque;
         this.estoqueMinimo = estoqueMinimo;
         this.categoria = categoria;
-        this.dataValidade = dataValidade && dataValidade.trim() !== "" ? dataValidade.trim() : undefined;
+        if (typeof ativo !== "boolean" || (!ativo && qtdEstoque > 0)) throw new Error("Situação do produto inválida: removido deve ter estoque zero.");
+        this.ativo = ativo;
+        this.dataValidade = dataValidade && dataValidade.trim() !== "" ? Documento.validarDataISO(dataValidade.trim()) : undefined;
         fornecedores.forEach((f) => this.vincularFornecedor(f));
     }
 
@@ -119,6 +124,22 @@ export class Produto implements EntidadeIdentificavel<string> {
         return this.dataValidade;
     }
 
+    public estaAtivo(): boolean { return this.ativo; }
+    public inativar(): void {
+        if (!this.ativo) throw new Error("Produto já removido.");
+        if (this.qtdEstoque > 0) throw new Error("Dê baixa no estoque antes de remover o produto.");
+        this.ativo = false;
+    }
+    public exigirAtivo(): void { if (!this.ativo) throw new Error("Produto removido não permite novas operações."); }
+
+    public corrigirDataValidade(novaData: string, motivo: string): void {
+        this.exigirAtivo();
+        const data = Documento.validarDataISO(novaData);
+        CorrecaoValidade.validarMotivo(motivo);
+        if (data === this.dataValidade) throw new Error("A nova validade deve ser diferente da atual.");
+        this.dataValidade = data;
+    }
+
     public getCategoria(): Categoria {
         return this.categoria;
     }
@@ -149,6 +170,7 @@ export class Produto implements EntidadeIdentificavel<string> {
     }
 
     public adicionarEstoque(quantidade: number): void {
+        this.exigirAtivo();
         if ((!Number.isFinite(quantidade) || quantidade <= 0)) {
             throw new Error("A quantidade de entrada no estoque deve ser maior que zero.");
         }
@@ -156,6 +178,7 @@ export class Produto implements EntidadeIdentificavel<string> {
     }
 
     public removerEstoque(quantidade: number): void {
+        this.exigirAtivo();
         if ((!Number.isFinite(quantidade) || quantidade <= 0)) {
             throw new Error("A quantidade de saída do estoque deve ser maior que zero.");
         }
@@ -168,11 +191,49 @@ export class Produto implements EntidadeIdentificavel<string> {
     }
 
     public definirEstoquePorAjuste(novaQuantidade: number): void {
+        this.exigirAtivo();
         if ((!Number.isFinite(novaQuantidade) || novaQuantidade < 0)) {
             throw new Error("A quantidade em estoque após ajuste não pode ser negativa.");
         }
         this.qtdEstoque = Number(novaQuantidade.toFixed(3));
     }
+}
+
+export interface RegistroCorrecaoValidade {
+    id: number;
+    dataHora: string;
+    codigoBarras: string;
+    descricaoProduto: string;
+    validadeAnterior?: string;
+    novaValidade: string;
+    motivo: string;
+    idFuncionario: number;
+    nomeFuncionario: string;
+}
+
+export class CorrecaoValidade {
+    private readonly registro: Readonly<RegistroCorrecaoValidade>;
+
+    public static validarMotivo(motivo: string): string {
+        if (typeof motivo !== "string" || motivo.trim().length < 5 || motivo.trim().length > 500) {
+            throw new Error("Informe um motivo entre 5 e 500 caracteres para a correção.");
+        }
+        return motivo.trim();
+    }
+
+    constructor(registro: RegistroCorrecaoValidade) {
+        this.registro = Object.freeze({
+            id: registro.id, dataHora: registro.dataHora,
+            codigoBarras: registro.codigoBarras, descricaoProduto: registro.descricaoProduto,
+            validadeAnterior: registro.validadeAnterior,
+            novaValidade: Documento.validarDataISO(registro.novaValidade),
+            motivo: CorrecaoValidade.validarMotivo(registro.motivo),
+            idFuncionario: registro.idFuncionario, nomeFuncionario: registro.nomeFuncionario
+        });
+        Object.freeze(this);
+    }
+
+    public getRegistro(): RegistroCorrecaoValidade { return { ...this.registro }; }
 }
 
 export class MovimentacaoEstoque implements EntidadeIdentificavel<number> {

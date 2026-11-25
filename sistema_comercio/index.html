@@ -26,7 +26,7 @@
     </header>
 
     <!-- NAVEGAÇÃO DE MÓDULOS -->
-    <div class="preview-notice"><span class="status-dot"></span> Preview local <span>Dados de demonstração salvos neste navegador. Use apenas dados fictícios.</span></div>
+    <div class="preview-notice"><span class="status-dot"></span> Preview local <span>Demonstração com dados locais. Use apenas dados fictícios.</span></div>
     <nav class="nav-tabs" aria-label="Módulos do sistema">
         <button type="button" class="nav-btn active" data-tab="dashboard">1. Visão Geral & Alertas</button>
         <button type="button" class="nav-btn" data-tab="pdv">2. Frente de Caixa (PDV)</button>
@@ -36,6 +36,7 @@
     </nav>
 
     <main class="main-container">
+        <div id="aviso-persistencia" class="aviso-persistencia" role="alert" hidden></div>
         <!-- ABA 1: VISÃO GERAL & ALERTAS -->
         <section id="tab-dashboard" class="tab-section active">
             <div class="kpi-grid">
@@ -45,7 +46,7 @@
                     <div id="kpi-qtd-vendas" class="kpi-sub">0 vendas</div>
                 </div>
                 <div class="kpi-card">
-                    <div class="kpi-label">Saldo Esperado no Caixa</div>
+                    <div class="kpi-label">Dinheiro Esperado no Caixa</div>
                     <div id="kpi-saldo-caixa" class="kpi-value">R$ 0,00</div>
                     <div id="kpi-status-sessao" class="kpi-sub">Sessão</div>
                 </div>
@@ -73,6 +74,7 @@
                                 <th>Qtd. Atual</th>
                                 <th>Estoque Mín.</th>
                                 <th>Situação</th>
+                                <th>Ações</th>
                             </tr>
                         </thead>
                         <tbody id="tbody-alertas-estoque"></tbody>
@@ -102,12 +104,23 @@
 
         <!-- ABA 2: FRENTE DE CAIXA (PDV) -->
         <section id="tab-pdv" class="tab-section">
+            <p id="aviso-acesso-caixa" class="aviso-persistencia" role="status" hidden></p>
+            <div class="card">
+                <h2>Caixas da empresa</h2>
+                <form id="form-novo-caixa" class="form-grid">
+                    <div class="form-group"><label for="novo-caixa-numero">Número do novo caixa</label><input type="number" id="novo-caixa-numero" min="1" step="1" required /></div>
+                    <div class="form-group"><button type="submit" class="btn btn-primary">Cadastrar Caixa</button></div>
+                </form>
+                <div class="table-wrapper"><table><thead><tr><th>Caixa</th><th>Situação</th></tr></thead><tbody id="tbody-caixas"></tbody></table></div>
+            </div>
             <div class="card">
                 <h2>Controle de Sessão de Caixa (Abertura e Fechamento)</h2>
+                <p>Você pode abrir sessões em caixas diferentes. Escolha abaixo o caixa em que esta venda será registrada.</p>
+                <div class="form-group"><label for="pdv-sessao-id">Caixa desta venda / sessão aberta</label><select id="pdv-sessao-id"></select></div>
                 <div id="painel-abrir-sessao">
                     <form id="form-abrir-sessao" class="form-grid">
                         <div class="form-group">
-                            <label for="sessao-caixa-id">Caixa Disponível</label>
+                            <label for="sessao-caixa-id">Abrir sessão em outro caixa disponível</label>
                             <select id="sessao-caixa-id" required></select>
                         </div>
                         <div class="form-group">
@@ -132,17 +145,20 @@
                             <strong id="info-sessao-vendas">R$ 0,00</strong>
                         </div>
                         <div class="resumo-item">
-                            <span>Valor Final Esperado</span>
+                            <span>Dinheiro Físico Esperado</span>
                             <strong id="info-sessao-esperado">R$ 0,00</strong>
                         </div>
+                        <div class="resumo-item"><span>Recebimentos Digitais</span><strong id="info-sessao-digital">R$ 0,00</strong></div>
+                        <div class="resumo-item"><span>Saldo Consolidado (Inicial + Vendas)</span><strong id="info-sessao-consolidado">R$ 0,00</strong></div>
                         <div style="display: flex; gap: 8px; align-items: center;">
-                            <input type="number" id="sessao-valor-conferido" step="0.01" min="0" placeholder="Valor conferido (opcional)" style="padding: 8px; border: 1px solid #cbd5e1; border-radius: 6px;" />
+                            <input type="number" id="sessao-valor-conferido" aria-label="Dinheiro físico contado (opcional)" step="0.01" min="0" placeholder="Dinheiro contado (opcional)" style="padding: 8px; border: 1px solid #cbd5e1; border-radius: 6px;" />
                             <button type="button" id="btn-fechar-sessao-atual" class="btn btn-danger">Fechar Caixa</button>
                         </div>
                     </div>
                 </div>
             </div>
 
+            <div id="ultimo-fechamento" class="card" role="status" hidden></div>
             <div class="grid-equal">
                 <!-- CARRINHO DE ITENS -->
                 <div class="card">
@@ -227,6 +243,7 @@
                         </div>
                     </div>
 
+                    <p id="resumo-venda-aviso" role="status"></p>
                     <div style="display: flex; gap: 10px; justify-content: flex-end;">
                         <button type="button" id="btn-limpar-venda" class="btn btn-secondary">Limpar Venda</button>
                         <button type="button" id="btn-finalizar-venda" class="btn btn-success">Finalizar Venda</button>
@@ -262,6 +279,7 @@
                                 <tr>
                                     <th>ID</th>
                                     <th>Data/Hora</th>
+                                    <th>Caixa</th>
                                     <th>Sessão / Operador</th>
                                     <th>Cliente</th>
                                     <th>Itens</th>
@@ -278,6 +296,7 @@
 
         <!-- ABA 3: ESTOQUE E PRODUTOS -->
         <section id="tab-estoque" class="tab-section">
+            <p id="aviso-acesso-estoque" class="aviso-persistencia" role="status" hidden></p>
             <div class="grid-equal">
                 <div class="card">
                     <h3>Cadastrar Novo Produto</h3>
@@ -376,6 +395,22 @@
             </div>
 
             <div class="card">
+                <h2>Corrigir validade cadastrada</h2>
+                <p>Use para corrigir uma data informada por engano, conferindo a embalagem. Corrigir o cadastro não prolonga a validade real. Para produto realmente vencido, use <strong>Dar baixa</strong> nos alertas ou registre uma SAIDA no estoque.</p>
+                <form id="form-corrigir-validade">
+                    <div class="form-grid">
+                        <div class="form-group"><label for="correcao-validade-produto">Produto</label><select id="correcao-validade-produto" required></select></div>
+                        <div class="form-group"><label for="correcao-validade-nova">Data correta na embalagem</label><input type="date" id="correcao-validade-nova" required /></div>
+                    </div>
+                    <p id="correcao-validade-atual" role="status"></p>
+                    <div class="form-group"><label for="correcao-validade-motivo">Motivo da correção</label><textarea id="correcao-validade-motivo" minlength="5" maxlength="500" rows="2" required placeholder="Ex.: data digitada incorretamente; conferida na embalagem"></textarea></div>
+                    <button type="submit" class="btn btn-primary">Salvar correção de validade</button>
+                </form>
+                <h3>Histórico de correções de validade</h3>
+                <div class="table-wrapper"><table><thead><tr><th>Data/Hora</th><th>Produto</th><th>Validade anterior</th><th>Nova validade</th><th>Motivo</th><th>Responsável</th></tr></thead><tbody id="tbody-correcoes-validade"></tbody></table></div>
+            </div>
+
+            <div class="card">
                 <h2>Catálogo Completo de Produtos no Estoque</h2>
                 <div class="catalogo-filtros">
                     <div class="form-group"><label for="busca-produtos">Buscar produto, código ou categoria</label><input type="search" id="busca-produtos" placeholder="Ex.: arroz, 789100 ou laticínios" /></div>
@@ -394,16 +429,20 @@
                                 <th>Estoque / Status</th>
                                 <th>Validade</th>
                                 <th>Fornecedores (Fornece)</th>
+                                <th>Ações</th>
                             </tr>
                         </thead>
                         <tbody id="tbody-lista-produtos"></tbody>
                     </table>
                 </div>
+                <h3>Produtos removidos do catálogo</h3>
+                <div class="table-wrapper"><table><thead><tr><th>Produto</th><th>Data/Hora</th><th>Responsável</th></tr></thead><tbody id="tbody-produtos-removidos"></tbody></table></div>
             </div>
         </section>
 
         <!-- ABA 4: COMPRAS E FORNECEDORES -->
         <section id="tab-compras" class="tab-section">
+            <p id="aviso-acesso-compras" class="aviso-persistencia" role="status" hidden></p>
             <div class="grid-equal">
                 <div class="card">
                     <h3>Registrar Compra de Fornecedor (Compra & Contem_Compra)</h3>
@@ -490,11 +529,14 @@
                                     <th>CNPJ</th>
                                     <th>E-mail</th>
                                     <th>Telefones</th>
+                                    <th>Ações</th>
                                 </tr>
                             </thead>
                             <tbody id="tbody-lista-fornecedores"></tbody>
                         </table>
                     </div>
+                    <h3>Fornecedores removidos</h3>
+                    <div class="table-wrapper"><table><thead><tr><th>Fornecedor</th><th>Data/Hora</th><th>Responsável</th></tr></thead><tbody id="tbody-fornecedores-removidos"></tbody></table></div>
                 </div>
             </div>
 
@@ -520,6 +562,7 @@
 
         <!-- ABA 5: FUNCIONÁRIOS, CARGOS E RASTREABILIDADE -->
         <section id="tab-equipe" class="tab-section">
+            <p id="aviso-acesso-equipe" class="aviso-persistencia" role="status" hidden></p>
             <div class="grid-equal">
                 <div class="card">
                     <h3>Cadastrar Novo Funcionário</h3>
@@ -545,7 +588,7 @@
                             </div>
                             <div class="form-group">
                                 <label for="func-senha">Senha de Acesso</label>
-                                <input type="password" id="func-senha" value="1234" required />
+                                <input type="password" id="func-senha" required />
                             </div>
                         </div>
                         <div class="form-group">
@@ -567,9 +610,31 @@
                             <label for="cargo-salario">Salário Base (R$)</label>
                             <input type="number" id="cargo-salario" step="0.01" min="0" value="2500.00" required />
                         </div>
+                        <fieldset class="permissoes-cargo"><legend>Módulos autorizados para este cargo</legend>
+                            <label><input type="checkbox" name="cargo-permissoes" value="CAIXA" /> Caixa</label>
+                            <label><input type="checkbox" name="cargo-permissoes" value="ESTOQUE" /> Estoque</label>
+                            <label><input type="checkbox" name="cargo-permissoes" value="COMPRAS" /> Compras</label>
+                            <label><input type="checkbox" name="cargo-permissoes" value="EQUIPE" /> Equipe (cadastros)</label>
+                        </fieldset>
+                        <p>Marque um ou mais módulos. Sem seleção, o cargo não autoriza operações. A gestão de autorizações individuais permanece com o gerente.</p>
                         <button type="submit" class="btn btn-primary">Salvar Cargo</button>
                     </form>
                 </div>
+            </div>
+
+            <div class="card">
+                <h2>Autorizações por módulo</h2>
+                <p>Selecione um gerente no topo para conceder ou revogar acesso individual ao módulo escolhido. As liberações são complementares às permissões herdadas do cargo. Para trocar o responsável pelo caixa, encerre a sessão atual e abra outra.</p>
+                <p id="aviso-autorizacao-caixa" role="status"></p>
+                <form id="form-autorizacao-caixa" class="form-grid">
+                    <div class="form-group"><label for="autorizacao-caixa-modulo">Tipo de autorização / módulo</label><select id="autorizacao-caixa-modulo"><option value="CAIXA">Caixa</option><option value="ESTOQUE">Estoque</option><option value="COMPRAS">Compras</option><option value="EQUIPE">Equipe (cadastros)</option></select></div>
+                    <div class="form-group"><label for="autorizacao-caixa-funcionario">Funcionário sem permissão pelo cargo neste módulo</label><select id="autorizacao-caixa-funcionario" required></select></div>
+                    <div class="form-group"><label for="autorizacao-caixa-acao">Ação</label><select id="autorizacao-caixa-acao"><option value="conceder">Conceder autorização</option><option value="revogar">Revogar autorização</option></select></div>
+                    <div class="form-group"><label for="autorizacao-caixa-motivo">Motivo (5 a 500 caracteres)</label><input id="autorizacao-caixa-motivo" minlength="5" maxlength="500" required /></div>
+                    <div class="form-group"><button id="btn-salvar-autorizacao-caixa" class="btn btn-primary" type="submit">Salvar autorização</button></div>
+                </form>
+                <h3>Histórico de autorizações</h3>
+                <div class="table-wrapper"><table><thead><tr><th>Data/Hora</th><th>Módulo</th><th>Funcionário</th><th>Alteração</th><th>Gerente responsável</th><th>Motivo</th></tr></thead><tbody id="tbody-autorizacoes-caixa"></tbody></table></div>
             </div>
 
             <div class="card">
@@ -584,6 +649,7 @@
                                 <th>Cargo</th>
                                 <th>Salário Base</th>
                                 <th>Admissão</th>
+                                <th>Acessos por módulo</th>
                                 <th>Telefones</th>
                             </tr>
                         </thead>

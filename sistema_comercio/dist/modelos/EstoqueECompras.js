@@ -1,6 +1,6 @@
-import { TipoMovimentacao } from "./Entidades.js";
+import { Documento, TipoMovimentacao } from "./Entidades.js";
 export class Produto {
-    constructor(codigoBarras, descricaoProduto, precoVenda, custoProduto, unidadeMedida, qtdEstoque, estoqueMinimo, categoria, dataValidade, fornecedores = []) {
+    constructor(codigoBarras, descricaoProduto, precoVenda, custoProduto, unidadeMedida, qtdEstoque, estoqueMinimo, categoria, dataValidade, fornecedores = [], ativo = true) {
         this.fornecedores = [];
         if (!codigoBarras || codigoBarras.trim() === "") {
             throw new Error("O código de barras do produto é obrigatório.");
@@ -22,7 +22,10 @@ export class Produto {
         this.qtdEstoque = qtdEstoque;
         this.estoqueMinimo = estoqueMinimo;
         this.categoria = categoria;
-        this.dataValidade = dataValidade && dataValidade.trim() !== "" ? dataValidade.trim() : undefined;
+        if (typeof ativo !== "boolean" || (!ativo && qtdEstoque > 0))
+            throw new Error("Situação do produto inválida: removido deve ter estoque zero.");
+        this.ativo = ativo;
+        this.dataValidade = dataValidade && dataValidade.trim() !== "" ? Documento.validarDataISO(dataValidade.trim()) : undefined;
         fornecedores.forEach((f) => this.vincularFornecedor(f));
     }
     getId() {
@@ -76,6 +79,24 @@ export class Produto {
     getDataValidade() {
         return this.dataValidade;
     }
+    estaAtivo() { return this.ativo; }
+    inativar() {
+        if (!this.ativo)
+            throw new Error("Produto já removido.");
+        if (this.qtdEstoque > 0)
+            throw new Error("Dê baixa no estoque antes de remover o produto.");
+        this.ativo = false;
+    }
+    exigirAtivo() { if (!this.ativo)
+        throw new Error("Produto removido não permite novas operações."); }
+    corrigirDataValidade(novaData, motivo) {
+        this.exigirAtivo();
+        const data = Documento.validarDataISO(novaData);
+        CorrecaoValidade.validarMotivo(motivo);
+        if (data === this.dataValidade)
+            throw new Error("A nova validade deve ser diferente da atual.");
+        this.dataValidade = data;
+    }
     getCategoria() {
         return this.categoria;
     }
@@ -99,12 +120,14 @@ export class Produto {
         return validade.getTime() < dataReferencia.getTime();
     }
     adicionarEstoque(quantidade) {
+        this.exigirAtivo();
         if ((!Number.isFinite(quantidade) || quantidade <= 0)) {
             throw new Error("A quantidade de entrada no estoque deve ser maior que zero.");
         }
         this.qtdEstoque = Number((this.qtdEstoque + quantidade).toFixed(3));
     }
     removerEstoque(quantidade) {
+        this.exigirAtivo();
         if ((!Number.isFinite(quantidade) || quantidade <= 0)) {
             throw new Error("A quantidade de saída do estoque deve ser maior que zero.");
         }
@@ -114,11 +137,32 @@ export class Produto {
         this.qtdEstoque = Number((this.qtdEstoque - quantidade).toFixed(3));
     }
     definirEstoquePorAjuste(novaQuantidade) {
+        this.exigirAtivo();
         if ((!Number.isFinite(novaQuantidade) || novaQuantidade < 0)) {
             throw new Error("A quantidade em estoque após ajuste não pode ser negativa.");
         }
         this.qtdEstoque = Number(novaQuantidade.toFixed(3));
     }
+}
+export class CorrecaoValidade {
+    static validarMotivo(motivo) {
+        if (typeof motivo !== "string" || motivo.trim().length < 5 || motivo.trim().length > 500) {
+            throw new Error("Informe um motivo entre 5 e 500 caracteres para a correção.");
+        }
+        return motivo.trim();
+    }
+    constructor(registro) {
+        this.registro = Object.freeze({
+            id: registro.id, dataHora: registro.dataHora,
+            codigoBarras: registro.codigoBarras, descricaoProduto: registro.descricaoProduto,
+            validadeAnterior: registro.validadeAnterior,
+            novaValidade: Documento.validarDataISO(registro.novaValidade),
+            motivo: CorrecaoValidade.validarMotivo(registro.motivo),
+            idFuncionario: registro.idFuncionario, nomeFuncionario: registro.nomeFuncionario
+        });
+        Object.freeze(this);
+    }
+    getRegistro() { return { ...this.registro }; }
 }
 export class MovimentacaoEstoque {
     constructor(idMovimentacao, dataHoraMov, tipo, qtdMovimentacao, produto, funcionarioResponsavel) {

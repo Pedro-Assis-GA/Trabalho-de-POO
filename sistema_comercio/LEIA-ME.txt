@@ -1,5 +1,5 @@
 GESTAO COMERCIAL - PREVIEW PARA TESTES DO GRUPO
-Versao de distribuicao: 23/11/2026
+Versao de distribuicao: 25/11/2026 - multiplos caixas, remocoes e abas protegidas v6
 
 1. COMO ABRIR SEM INSTALAR NADA
 
@@ -30,13 +30,56 @@ Isso substitui os cadastros e operacoes de teste salvos neste navegador.
 
 - Visao Geral: conferir vendas, saldo e alertas de estoque/validade.
 - Estoque: buscar "feijao" sem acento; filtrar estoque baixo e vencidos.
+- Para operar Estoque/Compras, selecionar Estoquista Demo (#3) ou Gerente Demo (#1) no topo;
+  Operadora Demo (#2) tem Caixa por cargo. Para vendas, voltar a Operadora Demo na sessao demo.
 - PDV: na sessao demo aberta, adicionar 1 Arroz Tipo 1 (R$ 28,90), informar
   pagamento PIX de R$ 28,90 e finalizar. Conferir historico e estoque reduzido.
 - Compras: incluir 3 unidades de arroz com custo de R$ 21,50, concluir a compra
   e conferir entrada no estoque e historico de compra de R$ 64,50.
 - Estoque: registrar uma saida manual de 1 unidade e conferir o novo saldo.
+- Validade digitada errada: nos alertas ou catalogo, clicar em Corrigir data.
+  Conferir a embalagem, informar data correta e motivo (5 a 500 caracteres), salvar.
+  Conferir historico com data anterior/nova, motivo, horario e operador do topo.
+  Recarregar: a data e o historico devem continuar salvos, sem mudar estoque/precos.
+- Produto realmente vencido: clicar em Dar baixa, conferir quantidade e confirmar
+  Registrar Movimentacao. So essa confirmacao reduz estoque e registra SAIDA.
+  Com saldo zero sai do indicador de vencidos; o alerta de estoque baixo pode ficar.
+- Corrigir cadastro nao prolonga a validade real. Uma data ainda vencida continua
+  bloqueada no PDV. Nova entrada nao renova validade. Nao ha controle de lotes.
 - Equipe: selecionar o funcionario responsavel e conferir a rastreabilidade.
+- Caixa e autorizacao: a demo nova seleciona Operadora Demo (#2), Operador de Caixa,
+  responsavel pela sessao aberta. Gerente possui todos os modulos, inclusive Caixa;
+  demais colaboradores dependem das permissoes do cargo ou autorizacao individual.
+- Para autorizar outro cargo: selecionar Gerente Demo (#1, Gerente Geral) no topo,
+  abrir Equipe > Autorizacoes por modulo, escolher modulo (Caixa/Estoque/Compras/Equipe),
+  funcionario sem permissao herdada nesse modulo, Conceder
+  autorizacao, motivo (5 a 500 caracteres) e Salvar autorizacao. Conferir historico.
+- Para usar o caixa com colaborador: abrir uma sessao propria em caixa livre.
+  No PDV, Caixa desta venda / sessao aberta escolhe onde vender e fechar.
+  Gerente pode operar qualquer sessao e tem seu nome registrado na venda;
+  colaborador usa somente as proprias. Trocar caixa limpa itens e pagamentos.
+- PDV > Caixas da empresa > Cadastrar Caixa cria numero inteiro positivo e unico.
+  Abrir outra sessao continua disponivel sem fechar a primeira. Caixa ocupado ou
+  em manutencao nao pode reabrir. Conferir saldos separados ao vender/fechar.
+- Recarregar preserva a selecao por funcionario; nao usa a primeira sessao global.
+- Para revogar: voltar ao gerente, Equipe, selecionar funcionario e Revogar com
+  motivo. Ele deve perder acesso imediatamente. Historico e permissao persistem.
+  Gerente pode encerrar uma sessao revogada, com autor do fechamento registrado.
+- Novo cargo: selecionar gerente, Equipe > Cadastrar Novo Cargo, marcar um ou mais
+  modulos e salvar. Sem marcacoes, colaborador fica apenas no Dashboard; gerente
+  segue acesso total. O quadro mostra Gerente, Cargo, Individual ou Sem acesso.
+- Revogar uma liberacao individual afeta somente o modulo escolhido; nao revoga
+  a permissao herdada do cargo. Abas e paineis sem acesso ficam ocultos; trocar de
+  funcionario numa aba proibida volta ao Dashboard, que permanece disponivel.
+- Historico de vendas: conferir numero e ID do Caixa em cada venda, mesmo depois
+  de mudar funcionario/recarregar. Abertura/venda/fechamento notificam o numero.
 - PDV: fechar o caixa, reabrir, recarregar e conferir historico e sessao.
+- Estoque: dar baixa total em produto e conferir Validade como ---. A data real
+  continua salva; nova entrada a reapresenta e, se vencida, continua bloqueada.
+- Produto: Remover exige estoque zero. Fornecedor: Remover retira de novas compras.
+  Confirmar a acao, conferir lista de removidos, recarregar e verificar historicos.
+  Remocao e logica: vendas/compras/vinculos antigos ficam preservados, SKU/CNPJ
+  reservados, sem opcao de reativacao nesta etapa. Produto removido nao finaliza venda.
 - Teste de erro: tentar vender acima do estoque ou finalizar com pagamento
   insuficiente; a operacao deve ser bloqueada e o estoque deve ficar inalterado.
 
@@ -52,7 +95,28 @@ apenas com dados ficticios.
   para manter os dados apos recarregar, use o servidor local.
 - Limpar os dados do navegador ou restaurar a demo pode apagar testes anteriores.
 - Nao informe dados pessoais, senhas reais ou dados financeiros reais.
-- Esta e uma demonstracao: faltam SQL, API, login real, permissoes e outros
+- Esta e uma demonstracao: faltam SQL, API, login real, permissoes gerais e outros
   recursos de producao. Senhas demo ficam no armazenamento local em texto.
-- O saldo de caixa segue a regra original: valor inicial + vendas de todas as
-  formas de pagamento, sem separar exclusivamente dinheiro fisico.
+- Permissoes dos novos cargos sao explicitas; gerente tem acesso total por nome
+  Gerente ou Gerente ... e pode conceder/revogar. A identidade e escolhida
+  livremente no topo: nao e autenticacao real nem protecao contra adulterar dados.
+- Cargos antigos sem lista sao migrados: Operador de Caixa recebe Caixa; Gerente
+  recebe Estoque/Compras/Equipe; Auxiliar de Estoque recebe Estoque/Compras; outros,
+  nenhum. Liberacao individual antiga vira Caixa. Listas novas vazias sao respeitadas
+  para colaboradores; gerente segue regra atual de acesso total.
+- Nenhuma concessao individual nova e inventada na migracao. Se uma sessao antiga ficar
+  sem responsavel habilitado, selecionar gerente e encerra-la antes de abrir outra.
+- O dinheiro esperado na gaveta soma o inicial ao dinheiro recebido menos troco.
+  PIX/cartoes aparecem separados; saldo consolidado soma inicial + total vendido.
+- PIX/cartao acima do total sao bloqueados. Troco somente sobre dinheiro recebido.
+- Produtos vencidos nao podem ser vendidos; documentos novos precisam ser validos.
+- Aviso de falha ao salvar significa operacoes apenas na memoria: nao recarregue
+  antes de resolver a falha se precisar preservar essas alteracoes.
+- Outra aba com dados alterados pode bloquear novas operacoes: recarregue para
+  carregar o estado atual. Nao use varias abas para operar simultaneamente.
+- Dados salvos invalidos nao sao sobrescritos automaticamente; reset confirmado
+  preserva copia de recuperacao no navegador antes de substituir.
+
+- Falha ao conferir os dados salvos bloqueia a operacao antes de alterar ou gravar.
+  Apos recuperar o acesso, tente novamente; se outra aba alterou dados, recarregue
+  para carregar essa versao. Uma aba antiga nao substitui a recuperacao de outra.

@@ -1,8 +1,10 @@
 import {
     ObservadorSistema,
+    ModuloSistema,
     StatusCaixa,
     TipoMovimentacao
 } from "../modelos/Entidades.js";
+import { Produto } from "../modelos/EstoqueECompras.js";
 import {
     GerenciadorSistema,
     ItemCompraInput,
@@ -11,6 +13,7 @@ import {
 } from "../servicos/GerenciadorSistema.js";
 
 export class ControladorInterface implements ObservadorSistema {
+    private readonly nomesModulos: Record<ModuloSistema, string> = { CAIXA: "Caixa", ESTOQUE: "Estoque", COMPRAS: "Compras", EQUIPE: "Equipe" };
     private sistema: GerenciadorSistema;
     private carrinhoVenda: ItemVendaInput[] = [];
     private pagamentosVenda: PagamentoVendaInput[] = [];
@@ -18,6 +21,8 @@ export class ControladorInterface implements ObservadorSistema {
     private funcionarioRastreioId: number = 1;
     private buscaProdutos: string = "";
     private filtroProdutos: string = "todos";
+    private abaAtual = "dashboard";
+    private contextoCarrinho: string | null = null;
 
     private escaparHTML(valor: unknown): string {
         return String(valor ?? "").replace(/[&<>"']/g, caractere => ({
@@ -47,6 +52,11 @@ export class ControladorInterface implements ObservadorSistema {
     }
 
     private exibirNotificacao(mensagem: string, tipo: "sucesso" | "erro" = "sucesso"): void {
+        const aviso = this.sistema.getAvisoPersistencia();
+        if (tipo === "sucesso" && aviso) {
+            mensagem = "Atenção: os dados desta aba não estão salvos. " + aviso;
+            tipo = "erro";
+        }
         const container = document.getElementById("toast-container");
         if (!container) return;
         const toast = document.createElement("div");
@@ -70,14 +80,31 @@ export class ControladorInterface implements ObservadorSistema {
             btn.addEventListener("click", () => {
                 const alvo = btn.dataset.tab;
                 if (!alvo) return;
-                botoes.forEach((b) => b.classList.remove("active"));
-                btn.classList.add("active");
-                botoes.forEach(b => b.setAttribute("aria-current", b === btn ? "page" : "false"));
-
-                document.querySelectorAll<HTMLElement>(".tab-section").forEach((sec) => {
-                    sec.classList.toggle("active", sec.id === `tab-${alvo}`);
-                });
+                if (!this.podeAcessarAba(alvo)) { this.exibirNotificacao("Você não tem autorização para acessar esta aba.", "erro"); return; }
+                this.abaAtual = alvo;
+                this.renderizarNavegacao();
             });
+        });
+    }
+
+    private podeAcessarAba(aba: string): boolean {
+        if (aba === "dashboard") return true;
+        const modulos: Record<string, ModuloSistema> = { pdv: ModuloSistema.CAIXA, estoque: ModuloSistema.ESTOQUE, compras: ModuloSistema.COMPRAS, equipe: ModuloSistema.EQUIPE };
+        return !!modulos[aba] && !!this.sistema.getFuncionarioLogado()?.temAcessoModulo(modulos[aba]!);
+    }
+
+    private renderizarNavegacao(): void {
+        if (!this.podeAcessarAba(this.abaAtual)) this.abaAtual = "dashboard";
+        document.querySelectorAll<HTMLButtonElement>(".nav-btn").forEach(btn => {
+            const aba = btn.dataset.tab || "";
+            btn.hidden = !this.podeAcessarAba(aba); btn.disabled = btn.hidden;
+            btn.classList.toggle("active", aba === this.abaAtual);
+            btn.setAttribute("aria-current", aba === this.abaAtual ? "page" : "false");
+        });
+        document.querySelectorAll<HTMLElement>(".tab-section").forEach(sec => {
+            const aba = sec.id.replace("tab-", "");
+            sec.hidden = !this.podeAcessarAba(aba);
+            sec.classList.toggle("active", !sec.hidden && aba === this.abaAtual);
         });
     }
 
@@ -86,7 +113,13 @@ export class ControladorInterface implements ObservadorSistema {
         selectOperador?.addEventListener("change", () => {
             try {
                 const id = Number(selectOperador.value);
+                const anterior = this.sistema.getFuncionarioLogado()?.getIdFuncionario();
                 const func = this.sistema.definirFuncionarioAtivo(id);
+                if (anterior !== id) {
+                    this.carrinhoVenda = [];
+                    this.pagamentosVenda = [];
+                    this.renderizarPDV();
+                }
                 this.exibirNotificacao(`Operador ativo alterado para: ${func.getNomeFuncionario()}`);
             } catch (e: any) {
                 this.exibirNotificacao(e.message, "erro");
@@ -96,17 +129,44 @@ export class ControladorInterface implements ObservadorSistema {
         const btnReset = document.getElementById("btn-resetar-dados");
         btnReset?.addEventListener("click", () => {
             if (!window.confirm("Restaurar a demonstração? Cadastros, vendas e compras salvos neste navegador serão substituídos.")) return;
+            const anteriores = [this.carrinhoVenda, this.pagamentosVenda, this.itensNovaCompra] as const;
             this.carrinhoVenda = [];
             this.pagamentosVenda = [];
             this.itensNovaCompra = [];
-            this.sistema.resetarDadosParaPadrao();
-            this.exibirNotificacao("Dados restaurados para o estado inicial de demonstração!");
+            try {
+                this.sistema.resetarDadosParaPadrao();
+                this.exibirNotificacao("Dados restaurados para o estado inicial de demonstração!");
+            } catch (e: any) {
+                [this.carrinhoVenda, this.pagamentosVenda, this.itensNovaCompra] = anteriores;
+                this.renderizarTudo();
+                this.exibirNotificacao(e.message, "erro");
+            }
         });
     }
 
     // ==================== EVENTOS DO PDV / CAIXA ====================
 
     private configurarEventosPDV(): void {
+        document.getElementById("form-novo-caixa")?.addEventListener("submit", evento => {
+            evento.preventDefault();
+            try {
+                const numero = document.getElementById("novo-caixa-numero") as HTMLInputElement;
+                const caixa = this.sistema.cadastrarCaixa(Number(numero.value));
+                numero.value = "";
+                this.exibirNotificacao(`Caixa #${caixa.getNumeroCaixa()} cadastrado e disponível para abertura.`);
+            } catch (erro: any) { this.exibirNotificacao(erro.message, "erro"); }
+        });
+        document.getElementById("pdv-sessao-id")?.addEventListener("change", () => {
+            const anteriores = [this.carrinhoVenda, this.pagamentosVenda] as const;
+            this.carrinhoVenda = []; this.pagamentosVenda = [];
+            try {
+                this.sistema.selecionarSessaoCaixa(Number((document.getElementById("pdv-sessao-id") as HTMLSelectElement).value));
+                this.exibirNotificacao("Caixa da venda selecionado. Itens e pagamentos foram limpos para evitar lançamento em outro caixa.");
+            } catch (erro: any) {
+                [this.carrinhoVenda, this.pagamentosVenda] = anteriores;
+                this.exibirNotificacao(erro.message, "erro"); this.renderizarPDV();
+            }
+        });
         const formAbrirSessao = document.getElementById("form-abrir-sessao") as HTMLFormElement | null;
         formAbrirSessao?.addEventListener("submit", (ev) => {
             ev.preventDefault();
@@ -117,7 +177,7 @@ export class ControladorInterface implements ObservadorSistema {
                 if (!operador) throw new Error("Selecione um funcionário operador no topo.");
                 const sessao = this.sistema.abrirSessaoCaixa(idCaixa, operador.getIdFuncionario(), valorInicial);
                 this.exibirNotificacao(
-                    `Sessão #${sessao.getIdSessao()} aberta no Caixa ${sessao.getCaixa().getNumeroCaixa()}!`
+                    `Sessão #${sessao.getIdSessao()} aberta no Caixa #${sessao.getCaixa().getNumeroCaixa()}!`
                 );
             } catch (e: any) {
                 this.exibirNotificacao(e.message, "erro");
@@ -127,7 +187,7 @@ export class ControladorInterface implements ObservadorSistema {
         const btnFecharSessao = document.getElementById("btn-fechar-sessao-atual");
         btnFecharSessao?.addEventListener("click", () => {
             try {
-                const sessao = this.sistema.obterSessaoAbertaAtual();
+                const sessao = this.sistema.obterSessaoSelecionada();
                 if (!sessao) throw new Error("Não há sessão aberta no momento.");
                 const inputConferido = document.getElementById("sessao-valor-conferido") as HTMLInputElement | null;
                 const valorConferido =
@@ -136,7 +196,7 @@ export class ControladorInterface implements ObservadorSistema {
                         : undefined;
                 this.sistema.fecharSessaoCaixa(sessao.getIdSessao(), valorConferido);
                 if (inputConferido) inputConferido.value = "";
-                this.exibirNotificacao(`Sessão #${sessao.getIdSessao()} fechada com sucesso!`);
+                this.exibirNotificacao(`Sessão #${sessao.getIdSessao()} do Caixa #${sessao.getCaixa().getNumeroCaixa()} fechada com sucesso!`);
             } catch (e: any) {
                 this.exibirNotificacao(e.message, "erro");
             }
@@ -146,12 +206,16 @@ export class ControladorInterface implements ObservadorSistema {
         formAddItemVenda?.addEventListener("submit", (ev) => {
             ev.preventDefault();
             try {
+                const sessao = this.sistema.obterSessaoSelecionada();
+                if (!sessao) throw new Error("Abra uma sessão antes de adicionar itens.");
+                this.sistema.verificarAcessoCaixa(sessao.getIdSessao());
                 const codigoBarras = (document.getElementById("venda-produto-codigo") as HTMLSelectElement).value;
                 const qtd = Number((document.getElementById("venda-produto-qtd") as HTMLInputElement).value);
                 if (!codigoBarras) throw new Error("Selecione um produto.");
                 if (qtd <= 0) throw new Error("Informe uma quantidade válida.");
 
                 const produto = this.sistema.buscarProdutoPorCodigo(codigoBarras);
+                if (produto.estaVencido()) throw new Error("Produto vencido. Não pode ser adicionado à venda.");
                 const existente = this.carrinhoVenda.find((i) => i.codigoBarras === codigoBarras);
                 const qtdTotal = (existente ? existente.qtdVenda : 0) + qtd;
 
@@ -180,6 +244,9 @@ export class ControladorInterface implements ObservadorSistema {
         formAddPagVenda?.addEventListener("submit", (ev) => {
             ev.preventDefault();
             try {
+                const sessao = this.sistema.obterSessaoSelecionada();
+                if (!sessao) throw new Error("Abra uma sessão antes de informar pagamentos.");
+                this.sistema.verificarAcessoCaixa(sessao.getIdSessao());
                 const idForma = Number((document.getElementById("venda-forma-pag") as HTMLSelectElement).value);
                 const valorPago = Number((document.getElementById("venda-valor-pag") as HTMLInputElement).value);
                 if (valorPago <= 0) throw new Error("Informe um valor de pagamento maior que zero.");
@@ -202,7 +269,7 @@ export class ControladorInterface implements ObservadorSistema {
         const btnFinalizarVenda = document.getElementById("btn-finalizar-venda");
         btnFinalizarVenda?.addEventListener("click", () => {
             try {
-                const sessao = this.sistema.obterSessaoAbertaAtual();
+                const sessao = this.sistema.obterSessaoSelecionada();
                 if (!sessao) {
                     throw new Error("Abra uma Sessão de Caixa antes de finalizar a venda.");
                 }
@@ -219,7 +286,7 @@ export class ControladorInterface implements ObservadorSistema {
                 this.pagamentosVenda = [];
                 this.renderizarTudo();
                 this.exibirNotificacao(
-                    `Venda #${venda.getIdVenda()} finalizada! Total: ${this.formatarMoeda(venda.getValorTotal())}`
+                    `Venda #${venda.getIdVenda()} finalizada no Caixa #${venda.getSessaoCaixa().getCaixa().getNumeroCaixa()} (Sessão #${venda.getSessaoCaixa().getIdSessao()})! Total: ${this.formatarMoeda(venda.getValorTotal())}`
                 );
             } catch (e: any) {
                 this.exibirNotificacao(e.message, "erro");
@@ -263,6 +330,42 @@ export class ControladorInterface implements ObservadorSistema {
     // ==================== EVENTOS DE ESTOQUE E PRODUTOS ====================
 
     private configurarEventosEstoque(): void {
+        for (const id of ["tbody-alertas-estoque", "tbody-lista-produtos"]) {
+            document.getElementById(id)?.addEventListener("click", evento => {
+                const remover = (evento.target as HTMLElement).closest<HTMLButtonElement>("button[data-remover-produto]");
+                if (remover?.dataset.removerProduto) {
+                    try {
+                        this.sistema.verificarAcessoModulo(ModuloSistema.ESTOQUE);
+                        if (!window.confirm("Remover este produto do catálogo? O estoque deve estar zerado; o histórico será preservado.")) return;
+                        this.sistema.removerProduto(remover.dataset.removerProduto!);
+                        this.exibirNotificacao("Produto removido do catálogo. Histórico preservado.");
+                    } catch (erro: any) { this.exibirNotificacao(erro.message, "erro"); }
+                    return;
+                }
+                const botao = (evento.target as HTMLElement).closest<HTMLButtonElement>("button[data-validade-acao]");
+                if (!botao) return;
+                this.prepararAcaoValidade(botao.dataset.codigo!, botao.dataset.validadeAcao!);
+            });
+        }
+        document.getElementById("correcao-validade-produto")?.addEventListener("change", () => {
+            this.atualizarValidadeAtual();
+            (document.getElementById("correcao-validade-nova") as HTMLInputElement).value = "";
+            (document.getElementById("correcao-validade-motivo") as HTMLTextAreaElement).value = "";
+        });
+        document.getElementById("form-corrigir-validade")?.addEventListener("submit", evento => {
+            evento.preventDefault();
+            try {
+                const operador = this.sistema.getFuncionarioLogado();
+                if (!operador) throw new Error("Selecione um funcionário operador no topo.");
+                const codigo = (document.getElementById("correcao-validade-produto") as HTMLSelectElement).value;
+                const data = document.getElementById("correcao-validade-nova") as HTMLInputElement;
+                const motivo = document.getElementById("correcao-validade-motivo") as HTMLTextAreaElement;
+                this.sistema.corrigirValidadeProduto(codigo, data.value, motivo.value, operador.getIdFuncionario());
+                data.value = "";
+                motivo.value = "";
+                this.exibirNotificacao("Correção de validade registrada com responsável e motivo.");
+            } catch (erro: any) { this.exibirNotificacao(erro.message, "erro"); }
+        });
         document.getElementById("busca-produtos")?.addEventListener("input", evento => {
             this.buscaProdutos = (evento.target as HTMLInputElement).value;
             this.renderizarEstoque();
@@ -340,7 +443,53 @@ export class ControladorInterface implements ObservadorSistema {
 
     // ==================== EVENTOS DE COMPRAS E FORNECEDORES ====================
 
+    private botoesValidade(produto: Produto): string {
+        const codigo = this.escaparHTML(produto.getCodigoBarras());
+        return `<button type="button" class="btn btn-secondary" data-validade-acao="corrigir" data-codigo="${codigo}">Corrigir data</button>` +
+            (produto.estaVencido() && produto.getQtdEstoque() > 0 ? ` <button type="button" class="btn btn-danger" data-validade-acao="baixa" data-codigo="${codigo}">Dar baixa</button>` : "");
+    }
+
+    private atualizarValidadeAtual(): void {
+        const select = document.getElementById("correcao-validade-produto") as HTMLSelectElement | null;
+        if (!select?.value) { this.definirTexto("correcao-validade-atual", "Selecione um produto."); return; }
+        const produto = this.sistema.buscarProdutoPorCodigo(select.value);
+        this.definirTexto("correcao-validade-atual", `Validade atual: ${produto.getDataValidade() || "Não informada"}${produto.estaVencido() ? " — vencido: venda bloqueada." : ""}`);
+    }
+
+    private prepararAcaoValidade(codigo: string, acao: string): void {
+        if (!this.podeAcessarAba("estoque")) { this.exibirNotificacao("Sem autorização para acessar Estoque.", "erro"); return; }
+        document.querySelector<HTMLButtonElement>('.nav-btn[data-tab="estoque"]')?.click();
+        if (acao === "baixa") {
+            const produto = this.sistema.buscarProdutoPorCodigo(codigo);
+            (document.getElementById("mov-produto-codigo") as HTMLSelectElement).value = codigo;
+            (document.getElementById("mov-tipo") as HTMLSelectElement).value = TipoMovimentacao.SAIDA;
+            const quantidade = document.getElementById("mov-qtd") as HTMLInputElement;
+            quantidade.value = String(produto.getQtdEstoque());
+            quantidade.focus();
+            quantidade.scrollIntoView({ block: "center", behavior: "smooth" });
+            this.exibirNotificacao("Confira a quantidade e clique em Registrar Movimentação para confirmar a baixa.");
+            return;
+        }
+        (document.getElementById("correcao-validade-produto") as HTMLSelectElement).value = codigo;
+        this.atualizarValidadeAtual();
+        const data = document.getElementById("correcao-validade-nova") as HTMLInputElement;
+        data.value = "";
+        (document.getElementById("correcao-validade-motivo") as HTMLTextAreaElement).value = "";
+        data.focus();
+        data.scrollIntoView({ block: "center", behavior: "smooth" });
+    }
+
     private configurarEventosCompras(): void {
+        document.getElementById("tbody-lista-fornecedores")?.addEventListener("click", evento => {
+            const botao = (evento.target as HTMLElement).closest<HTMLButtonElement>("button[data-remover-fornecedor]");
+            if (!botao) return;
+            try {
+                this.sistema.verificarAcessoModulo(ModuloSistema.COMPRAS);
+                if (!window.confirm("Remover este fornecedor das novas operações? Compras anteriores e vínculos históricos serão preservados.")) return;
+                this.sistema.removerFornecedor(Number(botao.dataset.removerFornecedor));
+                this.exibirNotificacao("Fornecedor removido. Histórico preservado.");
+            } catch (erro: any) { this.exibirNotificacao(erro.message, "erro"); }
+        });
         const formFornecedor = document.getElementById("form-novo-fornecedor") as HTMLFormElement | null;
         formFornecedor?.addEventListener("submit", (ev) => {
             ev.preventDefault();
@@ -408,13 +557,27 @@ export class ControladorInterface implements ObservadorSistema {
     // ==================== EVENTOS DE FUNCIONÁRIOS E CARGOS ====================
 
     private configurarEventosEquipe(): void {
+        document.getElementById("autorizacao-caixa-modulo")?.addEventListener("change", () => this.renderizarEquipe());
+        document.getElementById("form-autorizacao-caixa")?.addEventListener("submit", evento => {
+            evento.preventDefault();
+            try {
+                const alvo = Number((document.getElementById("autorizacao-caixa-funcionario") as HTMLSelectElement).value);
+                const permitir = (document.getElementById("autorizacao-caixa-acao") as HTMLSelectElement).value === "conceder";
+                const motivo = document.getElementById("autorizacao-caixa-motivo") as HTMLInputElement;
+                const modulo = ((document.getElementById("autorizacao-caixa-modulo") as HTMLSelectElement | null)?.value || ModuloSistema.CAIXA) as ModuloSistema;
+                this.sistema.alterarAutorizacao(alvo, modulo, permitir, motivo.value);
+                motivo.value = "";
+                this.exibirNotificacao(`Autorização para ${this.nomesModulos[modulo]} ${permitir ? "concedida" : "revogada"} e registrada.`);
+            } catch (erro: any) { this.exibirNotificacao(erro.message, "erro"); }
+        });
         const formCargo = document.getElementById("form-novo-cargo") as HTMLFormElement | null;
         formCargo?.addEventListener("submit", (ev) => {
             ev.preventDefault();
             try {
                 const nome = (document.getElementById("cargo-nome") as HTMLInputElement).value;
                 const salario = Number((document.getElementById("cargo-salario") as HTMLInputElement).value);
-                const cargo = this.sistema.cadastrarCargo(nome, salario);
+                const permissoes = Array.from(document.querySelectorAll<HTMLInputElement>('input[name="cargo-permissoes"]:checked')).map(input => input.value as ModuloSistema);
+                const cargo = this.sistema.cadastrarCargo(nome, salario, permissoes);
                 formCargo.reset();
                 this.exibirNotificacao(`Cargo "${cargo.getNomeCargo()}" cadastrado!`);
             } catch (e: any) {
@@ -462,12 +625,39 @@ export class ControladorInterface implements ObservadorSistema {
     // ==================== RENDERIZAÇÃO COMPLETA ====================
 
     public renderizarTudo(): void {
+        this.renderizarNavegacao();
+        const aviso = document.getElementById("aviso-persistencia");
+        if (aviso) {
+            aviso.textContent = this.sistema.getAvisoPersistencia() || "";
+            aviso.hidden = !this.sistema.getAvisoPersistencia();
+        }
         this.renderizarTopo();
         this.renderizarDashboard();
         this.renderizarPDV();
         this.renderizarEstoque();
         this.renderizarCompras();
         this.renderizarEquipe();
+        this.renderizarPermissoesModulos();
+    }
+
+    private renderizarPermissoesModulos(): void {
+        const formularios: Partial<Record<ModuloSistema, string[]>> = {
+            ESTOQUE: ["form-nova-categoria", "form-novo-produto", "form-movimentacao-estoque", "form-corrigir-validade"],
+            COMPRAS: ["form-novo-fornecedor", "form-add-item-compra"],
+            EQUIPE: ["form-novo-cargo", "form-novo-funcionario"]
+        };
+        for (const modulo of [ModuloSistema.ESTOQUE, ModuloSistema.COMPRAS, ModuloSistema.EQUIPE]) {
+            const permitido = this.sistema.getFuncionarioLogado()?.temAcessoModulo(modulo) ?? false;
+            const aviso = document.getElementById(`aviso-acesso-${modulo.toLowerCase()}`);
+            if (aviso) { aviso.hidden = permitido; aviso.textContent = `Sem autorização para operar ${this.nomesModulos[modulo]}. Solicite liberação a um gerente em Equipe > Autorizações por módulo. As consultas continuam disponíveis.`; }
+            for (const id of formularios[modulo]!) {
+                document.querySelectorAll?.<HTMLInputElement>(`#${id} input, #${id} select, #${id} textarea, #${id} button`).forEach(elemento => elemento.disabled = !permitido);
+            }
+            if (modulo === ModuloSistema.COMPRAS) {
+                const finalizar = document.getElementById("btn-finalizar-compra") as HTMLButtonElement | null;
+                if (finalizar) finalizar.disabled = !permitido;
+            }
+        }
     }
 
     private renderizarTopo(): void {
@@ -495,7 +685,7 @@ export class ControladorInterface implements ObservadorSistema {
     private renderizarDashboard(): void {
         const vendas = this.sistema.listarVendas();
         const totalVendasValor = vendas.reduce((acc, v) => acc + v.getValorTotal(), 0);
-        const sessaoAberta = this.sistema.obterSessaoAbertaAtual();
+        const sessaoAberta = this.sistema.obterSessaoSelecionada();
         const abaixoMin = this.sistema.listarProdutosAbaixoDoMinimo();
         const vencidos = this.sistema.listarProdutosVencidos();
 
@@ -503,13 +693,13 @@ export class ControladorInterface implements ObservadorSistema {
         this.definirTexto("kpi-qtd-vendas", `${vendas.length} venda(s) registrada(s)`);
         this.definirTexto(
             "kpi-saldo-caixa",
-            sessaoAberta ? this.formatarMoeda(sessaoAberta.calcularSaldoEsperado()) : "Caixa Fechado"
+            sessaoAberta ? this.formatarMoeda(sessaoAberta.calcularSaldoEsperado()) : "Selecione um caixa"
         );
         this.definirTexto(
             "kpi-status-sessao",
             sessaoAberta
                 ? `Sessão #${sessaoAberta.getIdSessao()} (Caixa ${sessaoAberta.getCaixa().getNumeroCaixa()})`
-                : "Nenhuma sessão ativa"
+                : "Nenhuma sessão selecionada"
         );
         this.definirTexto("kpi-estoque-critico", `${abaixoMin.length} item(ns)`);
         this.definirTexto("kpi-produtos-vencidos", `${vencidos.length} item(ns)`);
@@ -518,17 +708,17 @@ export class ControladorInterface implements ObservadorSistema {
         if (tbodyAlertas) {
             const listaAlertas = this.sistema
                 .listarProdutos()
-                .filter((p) => p.abaixoDoEstoqueMinimo() || p.estaVencido());
+                .filter((p) => p.abaixoDoEstoqueMinimo() || (p.getQtdEstoque() > 0 && p.estaVencido()));
             tbodyAlertas.innerHTML =
                 listaAlertas.length === 0
-                    ? `<tr><td colspan="6" class="empty-msg">Nenhum alerta de estoque ou validade no momento.</td></tr>`
+                    ? `<tr><td colspan="7" class="empty-msg">Nenhum alerta de estoque ou validade no momento.</td></tr>`
                     : listaAlertas
                           .map((p) => {
                               const tags: string[] = [];
                               if (p.abaixoDoEstoqueMinimo()) {
                                   tags.push(`<span class="badge badge-warning">Abaixo do Mínimo</span>`);
                               }
-                              if (p.estaVencido()) {
+                              if (p.getQtdEstoque() > 0 && p.estaVencido()) {
                                   tags.push(`<span class="badge badge-danger">Vencido (${this.escaparHTML(p.getDataValidade())})</span>`);
                               }
                               return `<tr>
@@ -538,6 +728,7 @@ export class ControladorInterface implements ObservadorSistema {
                                   <td>${p.getQtdEstoque()} ${this.escaparHTML(p.getUnidadeMedida())}</td>
                                   <td>${p.getEstoqueMinimo()} ${this.escaparHTML(p.getUnidadeMedida())}</td>
                                   <td>${tags.join(" ")}</td>
+                                  <td>${p.estaVencido() ? this.botoesValidade(p) : "—"}</td>
                               </tr>`;
                           })
                           .join("");
@@ -571,17 +762,42 @@ export class ControladorInterface implements ObservadorSistema {
     }
 
     private renderizarPDV(): void {
-        const sessaoAberta = this.sistema.obterSessaoAbertaAtual();
+        const sessaoAberta = this.sistema.obterSessaoSelecionada();
+        const contexto = `${this.sistema.getFuncionarioLogado()?.getIdFuncionario() ?? ""}:${sessaoAberta?.getIdSessao() ?? ""}`;
+        if (this.contextoCarrinho !== null && contexto !== this.contextoCarrinho) { this.carrinhoVenda = []; this.pagamentosVenda = []; }
+        this.contextoCarrinho = contexto;
+        const seletorSessao = document.getElementById("pdv-sessao-id") as HTMLSelectElement | null;
+        if (seletorSessao) {
+            seletorSessao.innerHTML = '<option value="">Selecione o caixa desta venda</option>' + this.sistema.listarSessoesAcessiveis().map(s => `<option value="${s.getIdSessao()}">Caixa #${s.getCaixa().getNumeroCaixa()} — Sessão #${s.getIdSessao()} — Aberta por ${this.escaparHTML(s.getFuncionario().getNomeFuncionario())}</option>`).join("");
+            seletorSessao.value = sessaoAberta ? String(sessaoAberta.getIdSessao()) : "";
+        }
+        const listaCaixas = document.getElementById("tbody-caixas");
+        if (listaCaixas) listaCaixas.innerHTML = this.sistema.listarCaixas().map(c => `<tr><td>Caixa #${c.getNumeroCaixa()}</td><td>${this.escaparHTML(c.getStatusCaixa())}</td></tr>`).join("");
+        document.querySelectorAll?.<HTMLInputElement>("#form-novo-caixa input, #form-novo-caixa button").forEach(el => el.disabled = !this.sistema.getFuncionarioLogado()?.podeOperarCaixa());
+        let aviso = "";
+        try { this.sistema.verificarAcessoCaixa(sessaoAberta?.getIdSessao()); }
+        catch (erro: any) { aviso = erro.message; }
+        const painelAcesso = document.getElementById("aviso-acesso-caixa");
+        if (painelAcesso) { painelAcesso.hidden = !aviso && !!sessaoAberta; painelAcesso.textContent = aviso || "Selecione uma sessão aberta para a venda ou abra uma sessão em outro caixa disponível."; }
+        for (const seletor of ["#form-abrir-sessao button", "#form-add-item-venda input", "#form-add-item-venda select", "#form-add-item-venda button", "#form-add-pagamento-venda input", "#form-add-pagamento-venda select", "#form-add-pagamento-venda button", "#form-novo-cliente input", "#form-novo-cliente button", "#btn-finalizar-venda"]) {
+            document.querySelectorAll?.<HTMLInputElement>(seletor).forEach(elemento => elemento.disabled = !!aviso || (!sessaoAberta && !seletor.startsWith("#form-abrir-sessao") && !seletor.startsWith("#form-novo-cliente")));
+        }
+        const fechar = document.getElementById("btn-fechar-sessao-atual") as HTMLButtonElement | null;
+        if (fechar) {
+            try { this.sistema.verificarAcessoCaixa(sessaoAberta?.getIdSessao(), true); fechar.disabled = !sessaoAberta; }
+            catch { fechar.disabled = true; }
+        }
         const painelAbrir = document.getElementById("painel-abrir-sessao");
         const painelSessaoAtiva = document.getElementById("painel-sessao-ativa");
 
         if (painelAbrir && painelSessaoAtiva) {
-            painelAbrir.style.display = sessaoAberta ? "none" : "block";
+            painelAbrir.style.display = "block";
             painelSessaoAtiva.style.display = sessaoAberta ? "block" : "none";
         }
 
         const selectCaixa = document.getElementById("sessao-caixa-id") as HTMLSelectElement | null;
         if (selectCaixa) {
+            const anterior = selectCaixa.value;
             const caixasLivres = this.sistema
                 .listarCaixas()
                 .filter((c) => c.getStatusCaixa() === StatusCaixa.LIVRE);
@@ -594,6 +810,7 @@ export class ControladorInterface implements ObservadorSistema {
                                   `<option value="${c.getIdCaixa()}">Caixa #0${c.getNumeroCaixa()} (${c.getStatusCaixa()})</option>`
                           )
                           .join("");
+            if (anterior && caixasLivres.some(c => String(c.getIdCaixa()) === anterior)) selectCaixa.value = anterior;
         }
 
         if (sessaoAberta) {
@@ -605,6 +822,25 @@ export class ControladorInterface implements ObservadorSistema {
             this.definirTexto("info-sessao-inicial", this.formatarMoeda(sessaoAberta.getValorInicial()));
             this.definirTexto("info-sessao-vendas", this.formatarMoeda(sessaoAberta.calcularTotalVendas()));
             this.definirTexto("info-sessao-esperado", this.formatarMoeda(sessaoAberta.calcularSaldoEsperado()));
+            this.definirTexto("info-sessao-consolidado", this.formatarMoeda(sessaoAberta.calcularSaldoConsolidado()));
+            this.definirTexto("info-sessao-digital", this.formatarMoeda(sessaoAberta.calcularTotalDigital()));
+        }
+
+        const fechada = this.sistema.listarSessoesCaixa().find(s => !s.estaAberta());
+        const painelFechamento = document.getElementById("ultimo-fechamento");
+        if (painelFechamento) {
+            painelFechamento.hidden = !fechada;
+            if (fechada) {
+                const esperado = fechada.getEsperadoNoFechamento();
+                const conferido = fechada.getValorConferido();
+                const diferenca = fechada.calcularDiferencaFechamento();
+                painelFechamento.textContent = esperado === undefined
+                    ? `Sessão #${fechada.getIdSessao()} — fechamento legado: valor registrado ${this.formatarMoeda(fechada.getValorFinal() || 0)}. Não há conferência física registrada no formato atual.`
+                    : `Sessão #${fechada.getIdSessao()} — esperado em dinheiro: ${this.formatarMoeda(esperado)}. ` +
+                      (conferido === undefined ? "Contagem não informada; fechamento pelo esperado." :
+                        `Conferido: ${this.formatarMoeda(conferido)}. Diferença: ${this.formatarMoeda(diferenca!)} (${diferenca! > 0 ? "sobra" : diferenca! < 0 ? "falta" : "sem diferença"}).`) +
+                      (fechada.getIdResponsavelFechamento() === undefined ? " Responsável pelo fechamento não registrado no histórico legado." : ` Fechamento por funcionário #${fechada.getIdResponsavelFechamento()}.`);
+            }
         }
 
         // Selects do PDV
@@ -707,7 +943,13 @@ export class ControladorInterface implements ObservadorSistema {
 
         const totalVenda = this.calcularTotalCarrinho();
         const totalPago = this.calcularTotalPagamentosCarrinho();
-        const troco = Math.max(0, totalPago - totalVenda);
+        const dinheiro = this.pagamentosVenda.filter(p => this.sistema.buscarFormaPagamentoPorId(p.idForma).permiteTroco())
+            .reduce((soma, p) => soma + Math.round(p.valorPago * 100), 0) / 100;
+        const digital = Number((totalPago - dinheiro).toFixed(2));
+        const troco = Math.min(dinheiro, Math.max(0, Number((totalPago - totalVenda).toFixed(2))));
+        this.definirTexto("resumo-venda-aviso", Math.round(digital * 100) > Math.round(totalVenda * 100)
+            ? "Pagamento digital excede o total. Ajuste PIX/cartões antes de finalizar. Troco somente em dinheiro."
+            : "Troco somente sobre o dinheiro recebido.");
         this.definirTexto("resumo-venda-total", this.formatarMoeda(totalVenda));
         this.definirTexto("resumo-venda-pago", this.formatarMoeda(totalPago));
         this.definirTexto("resumo-venda-troco", this.formatarMoeda(troco));
@@ -718,7 +960,7 @@ export class ControladorInterface implements ObservadorSistema {
             const vendas = this.sistema.listarVendas();
             tbodyHistVendas.innerHTML =
                 vendas.length === 0
-                    ? `<tr><td colspan="7" class="empty-msg">Nenhuma venda realizada ainda.</td></tr>`
+                    ? `<tr><td colspan="8" class="empty-msg">Nenhuma venda realizada ainda.</td></tr>`
                     : vendas
                           .map((v) => {
                               const itensStr = v
@@ -737,10 +979,10 @@ export class ControladorInterface implements ObservadorSistema {
                               return `<tr>
                                   <td>#${v.getIdVenda()}</td>
                                   <td>${this.escaparHTML(v.getDataHoraVenda())}</td>
+                                  <td>Caixa #${v.getSessaoCaixa().getCaixa().getNumeroCaixa()} (ID ${v.getSessaoCaixa().getCaixa().getIdCaixa()})</td>
                                   <td>Sessão #${v.getSessaoCaixa().getIdSessao()} (${this.escaparHTML(v
-                                  .getSessaoCaixa()
-                                  .getFuncionario()
-                                  .getNomeFuncionario())})</td>
+                                  .getOperadorVenda()
+                                  .getNomeFuncionario())}${v.getIdOperadorRegistrado() === undefined ? "; responsável da sessão no histórico legado" : ""})<br>Aberta por: ${this.escaparHTML(v.getSessaoCaixa().getFuncionario().getNomeFuncionario())}</td>
                                   <td>${v.getCliente() ? this.escaparHTML(v.getCliente()!.getNomeCliente()) : "Não identificado"}</td>
                                   <td>${itensStr}</td>
                                   <td>${pagsStr}</td>
@@ -772,6 +1014,7 @@ export class ControladorInterface implements ObservadorSistema {
 
         const selectMovProd = document.getElementById("mov-produto-codigo") as HTMLSelectElement | null;
         if (selectMovProd) {
+            const anterior = selectMovProd.value;
             selectMovProd.innerHTML = this.sistema
                 .listarProdutos()
                 .map(
@@ -779,7 +1022,24 @@ export class ControladorInterface implements ObservadorSistema {
                         `<option value="${this.escaparHTML(p.getCodigoBarras())}">${this.escaparHTML(p.getDescricaoProduto())} (Atual: ${p.getQtdEstoque()} ${this.escaparHTML(p.getUnidadeMedida())})</option>`
                 )
                 .join("");
+            if (anterior) selectMovProd.value = anterior;
         }
+
+        const selectValidade = document.getElementById("correcao-validade-produto") as HTMLSelectElement | null;
+        if (selectValidade) {
+            const anterior = selectValidade.value;
+            selectValidade.innerHTML = '<option value="">Selecione um produto</option>' + this.sistema.listarProdutos()
+                .map(p => `<option value="${this.escaparHTML(p.getCodigoBarras())}">${this.escaparHTML(p.getDescricaoProduto())}</option>`).join("");
+            selectValidade.value = anterior;
+            this.atualizarValidadeAtual();
+        }
+        const historico = document.getElementById("tbody-correcoes-validade");
+        if (historico) historico.innerHTML = this.sistema.listarCorrecoesValidade().map(c => `<tr>
+            <td>${this.escaparHTML(new Date(c.dataHora).toLocaleString("pt-BR"))}</td>
+            <td>${this.escaparHTML(c.descricaoProduto)} (${this.escaparHTML(c.codigoBarras)})</td>
+            <td>${this.escaparHTML(c.validadeAnterior || "Não informada")}</td><td>${this.escaparHTML(c.novaValidade)}</td>
+            <td>${this.escaparHTML(c.motivo)}</td><td>${this.escaparHTML(c.nomeFuncionario)} (#${c.idFuncionario})</td>
+            </tr>`).join("") || '<tr><td colspan="6" class="empty-msg">Nenhuma correção de validade registrada.</td></tr>';
 
         const tbodyProdutos = document.getElementById("tbody-lista-produtos");
         if (tbodyProdutos) {
@@ -798,7 +1058,7 @@ export class ControladorInterface implements ObservadorSistema {
                     const statusEstoque = p.abaixoDoEstoqueMinimo()
                         ? `<span class="badge badge-warning">Baixo (${p.getQtdEstoque()}/${p.getEstoqueMinimo()})</span>`
                         : `<span class="badge badge-success">Normal (${p.getQtdEstoque()})</span>`;
-                    const validadeStr = p.getDataValidade()
+                    const validadeStr = p.getQtdEstoque() === 0 ? "---" : p.getDataValidade()
                         ? p.estaVencido()
                             ? `<span class="badge badge-danger">Vencido: ${this.escaparHTML(p.getDataValidade())}</span>`
                             : this.escaparHTML(p.getDataValidade()!)
@@ -806,7 +1066,7 @@ export class ControladorInterface implements ObservadorSistema {
                     const forns =
                         p
                             .getFornecedores()
-                            .map((f) => f.getRazaoSocial())
+                            .map((f) => f.getRazaoSocial() + (f.estaAtivo() ? "" : " (removido)"))
                             .join(", ") || "—";
                     return `<tr>
                         <td><code>${this.escaparHTML(p.getCodigoBarras())}</code></td>
@@ -817,10 +1077,13 @@ export class ControladorInterface implements ObservadorSistema {
                         <td>${statusEstoque} ${this.escaparHTML(p.getUnidadeMedida())}</td>
                         <td>${validadeStr}</td>
                         <td>${this.escaparHTML(forns)}</td>
+                        <td>${this.botoesValidade(p)} <button type="button" class="btn btn-danger" data-remover-produto="${this.escaparHTML(p.getCodigoBarras())}">Remover</button></td>
                     </tr>`;
                 })
-                .join("") || '<tr><td colspan="8" class="empty-msg">Nenhum produto encontrado. Ajuste a busca ou o filtro.</td></tr>';
+                .join("") || '<tr><td colspan="9" class="empty-msg">Nenhum produto encontrado. Ajuste a busca ou o filtro.</td></tr>';
         }
+        const removidos = document.getElementById("tbody-produtos-removidos");
+        if (removidos) removidos.innerHTML = this.linhasRemocoes("PRODUTO");
     }
 
     private renderizarCompras(): void {
@@ -894,6 +1157,7 @@ export class ControladorInterface implements ObservadorSistema {
                         <td>${this.escaparHTML(f.getCnpj())}</td>
                         <td>${this.escaparHTML(f.getEmail())}</td>
                         <td>${this.escaparHTML(f.getTelefones().join(" / ")) || "—"}</td>
+                        <td><button type="button" class="btn btn-danger" data-remover-fornecedor="${f.getIdFornecedor()}">Remover</button></td>
                     </tr>`
                 )
                 .join("");
@@ -927,9 +1191,28 @@ export class ControladorInterface implements ObservadorSistema {
                           })
                           .join("");
         }
+        const removidos = document.getElementById("tbody-fornecedores-removidos");
+        if (removidos) removidos.innerHTML = this.linhasRemocoes("FORNECEDOR");
+    }
+
+    private linhasRemocoes(tipo: "PRODUTO" | "FORNECEDOR"): string {
+        return this.sistema.listarRemocoes().filter(r => r.tipo === tipo).map(r => `<tr><td>${this.escaparHTML(r.descricao)} (${this.escaparHTML(r.referencia)})</td><td>${this.escaparHTML(new Date(r.dataHora).toLocaleString("pt-BR"))}</td><td>${this.escaparHTML(r.nomeFuncionario)} (#${r.idFuncionario})</td></tr>`).join("") || '<tr><td colspan="3" class="empty-msg">Nenhuma remoção registrada.</td></tr>';
     }
 
     private renderizarEquipe(): void {
+        const gerente = this.sistema.getFuncionarioLogado()?.ehGerente() ?? false;
+        const modulo = ((document.getElementById("autorizacao-caixa-modulo") as HTMLSelectElement | null)?.value || ModuloSistema.CAIXA) as ModuloSistema;
+        this.definirTexto("aviso-autorizacao-caixa", gerente ? `Você pode conceder ou revogar acesso individual a ${this.nomesModulos[modulo]}. Permissões herdadas do cargo são indicadas no quadro e não são revogadas por esta ação.` : "Selecione um gerente no topo para alterar autorizações.");
+        const salvar = document.getElementById("btn-salvar-autorizacao-caixa") as HTMLButtonElement | null;
+        if (salvar) salvar.disabled = !gerente;
+        const selectAlvo = document.getElementById("autorizacao-caixa-funcionario") as HTMLSelectElement | null;
+        if (selectAlvo) {
+            const anterior = selectAlvo.value;
+            selectAlvo.innerHTML = '<option value="">Selecione um funcionário</option>' + this.sistema.listarFuncionarios().filter(f => !f.ehGerente() && !f.getCargo().permite(modulo)).map(f => `<option value="${f.getIdFuncionario()}">${this.escaparHTML(f.getNomeFuncionario())} — ${this.escaparHTML(f.getCargo().getNomeCargo())} (${f.temAutorizacaoModulo(modulo) ? "autorização individual" : "sem autorização"})</option>`).join("");
+            selectAlvo.value = anterior;
+        }
+        const historico = document.getElementById("tbody-autorizacoes-caixa");
+        if (historico) historico.innerHTML = this.sistema.listarAutorizacoes().map(r => `<tr><td>${this.escaparHTML(new Date(r.dataHora).toLocaleString("pt-BR"))}</td><td>${this.nomesModulos[r.modulo]}</td><td>${this.escaparHTML(r.nomeFuncionario)} (#${r.idFuncionario})</td><td>${r.antes ? "Autorizado" : "Sem autorização"} → ${r.depois ? "Autorizado" : "Sem autorização"}</td><td>${this.escaparHTML(r.nomeGerente)} (#${r.idGerente})</td><td>${this.escaparHTML(r.motivo)}</td></tr>`).join("") || '<tr><td colspan="6" class="empty-msg">Nenhuma autorização registrada.</td></tr>';
         const selectCargo = document.getElementById("func-cargo") as HTMLSelectElement | null;
         if (selectCargo) {
             selectCargo.innerHTML = this.sistema
@@ -955,6 +1238,7 @@ export class ControladorInterface implements ObservadorSistema {
                         <td><span class="badge badge-info">${this.escaparHTML(f.getCargo().getNomeCargo())}</span></td>
                         <td>${this.formatarMoeda(f.getCargo().getSalarioBase())}</td>
                         <td>${this.escaparHTML(f.getDataAdmissao())}</td>
+                        <td>${Object.values(ModuloSistema).map(m => `${this.nomesModulos[m]}: ${f.ehGerente() ? "Gerente" : f.getCargo().permite(m) ? "Cargo" : f.temAutorizacaoModulo(m) ? "Individual" : "Sem acesso"}`).join("<br>")}</td>
                         <td>${this.escaparHTML(f.getTelefones().join(" / ")) || "—"}</td>
                     </tr>`
                 )

@@ -14,6 +14,9 @@ export class SessaoCaixa implements EntidadeIdentificavel<number> {
     private dataFechamento?: string;
     private valorInicial: number;
     private valorFinal?: number;
+    private esperadoNoFechamento?: number;
+    private valorConferido?: number;
+    private idResponsavelFechamento?: number;
     private funcionario: Funcionario;
     private caixa: Caixa;
     private vendas: Venda[] = [];
@@ -23,11 +26,13 @@ export class SessaoCaixa implements EntidadeIdentificavel<number> {
         dataAbertura: string,
         valorInicial: number,
         funcionario: Funcionario,
-        caixa: Caixa
+        caixa: Caixa,
+        origem: "novo" | "historico" = "novo"
     ) {
         if ((!Number.isFinite(valorInicial) || valorInicial < 0)) {
             throw new Error("O valor inicial da sessão de caixa não pode ser negativo.");
         }
+        if (origem === "novo" && !funcionario.podeOperarCaixa()) throw new Error("Funcionário sem autorização para operar o caixa.");
         this.idSessao = idSessao;
         this.dataAbertura = dataAbertura;
         this.valorInicial = Number(valorInicial.toFixed(2));
@@ -64,6 +69,8 @@ export class SessaoCaixa implements EntidadeIdentificavel<number> {
         return this.funcionario;
     }
 
+    public getIdResponsavelFechamento(): number | undefined { return this.idResponsavelFechamento; }
+
     public getCaixa(): Caixa {
         return this.caixa;
     }
@@ -93,10 +100,25 @@ export class SessaoCaixa implements EntidadeIdentificavel<number> {
     }
 
     public calcularSaldoEsperado(): number {
+        return Number((this.valorInicial + this.vendas.reduce((soma, venda) => soma + venda.calcularDinheiroLiquido(), 0)).toFixed(2));
+    }
+
+    public calcularSaldoConsolidado(): number {
         return Number((this.valorInicial + this.calcularTotalVendas()).toFixed(2));
     }
 
-    public fecharSessao(dataFechamento: string, valorFinalConferido?: number): number {
+    public calcularTotalDigital(): number {
+        return Number(this.vendas.reduce((soma, venda) => soma + venda.calcularTotalDigital(), 0).toFixed(2));
+    }
+
+    public getEsperadoNoFechamento(): number | undefined { return this.esperadoNoFechamento; }
+    public getValorConferido(): number | undefined { return this.valorConferido; }
+    public calcularDiferencaFechamento(): number | undefined {
+        return this.valorConferido !== undefined && this.esperadoNoFechamento !== undefined
+            ? Number((this.valorConferido - this.esperadoNoFechamento).toFixed(2)) : undefined;
+    }
+
+    public fecharSessao(dataFechamento: string, valorFinalConferido?: number, idResponsavel?: number): number {
         if (!this.estaAberta()) {
             throw new Error("Esta sessão de caixa já foi fechada.");
         }
@@ -104,7 +126,10 @@ export class SessaoCaixa implements EntidadeIdentificavel<number> {
             throw new Error("O valor conferido deve ser um número finito não negativo.");
         }
         this.dataFechamento = dataFechamento;
+        this.idResponsavelFechamento = idResponsavel;
         const saldoCalculado = this.calcularSaldoEsperado();
+        this.esperadoNoFechamento = saldoCalculado;
+        this.valorConferido = valorFinalConferido === undefined ? undefined : Number(valorFinalConferido.toFixed(2));
         this.valorFinal = valorFinalConferido !== undefined
             ? Number(valorFinalConferido.toFixed(2))
             : saldoCalculado;
@@ -112,9 +137,12 @@ export class SessaoCaixa implements EntidadeIdentificavel<number> {
         return this.valorFinal;
     }
 
-    public restaurarFechamento(dataFechamento?: string, valorFinal?: number): void {
+    public restaurarFechamento(dataFechamento?: string, valorFinal?: number, esperadoNoFechamento?: number, valorConferido?: number, idResponsavel?: number): void {
         this.dataFechamento = dataFechamento;
         this.valorFinal = valorFinal;
+        this.esperadoNoFechamento = esperadoNoFechamento;
+        this.valorConferido = valorConferido;
+        this.idResponsavelFechamento = idResponsavel;
         if (dataFechamento) {
             this.caixa.setStatusCaixa(StatusCaixa.LIVRE);
         } else {
@@ -212,6 +240,8 @@ export class PagamentoVenda {
 }
 
 export class Venda implements EntidadeIdentificavel<number> {
+    private operadorVenda: Funcionario;
+    private operadorRegistrado: boolean;
     private idVenda: number;
     private dataHoraVenda: string;
     private valorTotal: number = 0;
@@ -224,12 +254,15 @@ export class Venda implements EntidadeIdentificavel<number> {
         idVenda: number,
         dataHoraVenda: string,
         sessaoCaixa: SessaoCaixa,
-        cliente?: Cliente
+        cliente?: Cliente,
+        operadorVenda?: Funcionario
     ) {
         this.idVenda = idVenda;
         this.dataHoraVenda = dataHoraVenda;
         this.sessaoCaixa = sessaoCaixa;
         this.cliente = cliente;
+        this.operadorVenda = operadorVenda ?? sessaoCaixa.getFuncionario();
+        this.operadorRegistrado = operadorVenda !== undefined;
     }
 
     public getId(): number {
@@ -264,11 +297,16 @@ export class Venda implements EntidadeIdentificavel<number> {
         return [...this.itens];
     }
 
+    public getOperadorVenda(): Funcionario { return this.operadorVenda; }
+    public getIdOperadorRegistrado(): number | undefined { return this.operadorRegistrado ? this.operadorVenda.getIdFuncionario() : undefined; }
+
     public getPagamentos(): PagamentoVenda[] {
         return [...this.pagamentos];
     }
 
     public adicionarItem(produto: Produto, qtdVenda: number, precoUnitario?: number): void {
+        produto.exigirAtivo();
+        if (produto.estaVencido()) throw new Error(`Produto vencido: ${produto.getDescricaoProduto()}. Venda bloqueada.`);
         if (!Number.isFinite(qtdVenda) || qtdVenda <= 0) {
             throw new Error("A quantidade vendida deve ser um número finito maior que zero.");
         }
@@ -316,11 +354,27 @@ export class Venda implements EntidadeIdentificavel<number> {
     }
 
     public calcularTroco(): number {
-        const diferenca = this.calcularTotalPago() - this.valorTotal;
-        return diferenca > 0 ? Number(diferenca.toFixed(2)) : 0;
+        const diferenca = Math.max(0, Math.round(this.calcularTotalPago() * 100) - Math.round(this.valorTotal * 100));
+        return Math.min(diferenca, Math.round(this.calcularTotalDinheiro() * 100)) / 100;
+    }
+
+    public calcularTotalDinheiro(): number {
+        return this.pagamentos.filter(p => p.getFormaPagamento().permiteTroco())
+            .reduce((soma, p) => soma + Math.round(p.getValorPago() * 100), 0) / 100;
+    }
+
+    public calcularTotalDigital(): number {
+        return this.pagamentos.filter(p => !p.getFormaPagamento().permiteTroco())
+            .reduce((soma, p) => soma + Math.round(p.getValorPago() * 100), 0) / 100;
+    }
+
+    public calcularDinheiroLiquido(): number {
+        return Number((this.calcularTotalDinheiro() - this.calcularTroco()).toFixed(2));
     }
 
     public validarVendaParaFinalizacao(): void {
+        if (!this.operadorVenda.podeOperarCaixa()) throw new Error("Responsável da venda sem autorização para operar o caixa.");
+        if (!this.operadorVenda.ehGerente() && this.operadorVenda.getIdFuncionario() !== this.sessaoCaixa.getFuncionario().getIdFuncionario()) throw new Error("Sessão pertence a outro funcionário.");
         if (!this.sessaoCaixa.estaAberta()) {
             throw new Error("A sessão de caixa não está aberta.");
         }
@@ -329,6 +383,14 @@ export class Venda implements EntidadeIdentificavel<number> {
         }
         if (this.pagamentos.length === 0) {
             throw new Error("A venda precisa ter pelo menos uma forma de pagamento informada.");
+        }
+        if (Math.round(this.calcularTotalDigital() * 100) > Math.round(this.valorTotal * 100)) {
+            throw new Error("PIX e cartões não podem ultrapassar o total da venda. Troco é permitido apenas em dinheiro.");
+        }
+        for (const item of this.itens) {
+            item.getProduto().exigirAtivo();
+            if (item.getProduto().estaVencido()) throw new Error(`Produto vencido: ${item.getProduto().getDescricaoProduto()}. Venda bloqueada.`);
+            if (item.getQtdVenda() > item.getProduto().getQtdEstoque()) throw new Error("Estoque insuficiente na finalização da venda.");
         }
         if (this.calcularTotalPago() < this.valorTotal) {
             const faltante = (this.valorTotal - this.calcularTotalPago()).toFixed(2);

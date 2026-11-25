@@ -1,10 +1,12 @@
 import { StatusCaixa } from "./Entidades.js";
 export class SessaoCaixa {
-    constructor(idSessao, dataAbertura, valorInicial, funcionario, caixa) {
+    constructor(idSessao, dataAbertura, valorInicial, funcionario, caixa, origem = "novo") {
         this.vendas = [];
         if ((!Number.isFinite(valorInicial) || valorInicial < 0)) {
             throw new Error("O valor inicial da sessão de caixa não pode ser negativo.");
         }
+        if (origem === "novo" && !funcionario.podeOperarCaixa())
+            throw new Error("Funcionário sem autorização para operar o caixa.");
         this.idSessao = idSessao;
         this.dataAbertura = dataAbertura;
         this.valorInicial = Number(valorInicial.toFixed(2));
@@ -33,6 +35,7 @@ export class SessaoCaixa {
     getFuncionario() {
         return this.funcionario;
     }
+    getIdResponsavelFechamento() { return this.idResponsavelFechamento; }
     getCaixa() {
         return this.caixa;
     }
@@ -56,9 +59,21 @@ export class SessaoCaixa {
         return Number(total.toFixed(2));
     }
     calcularSaldoEsperado() {
+        return Number((this.valorInicial + this.vendas.reduce((soma, venda) => soma + venda.calcularDinheiroLiquido(), 0)).toFixed(2));
+    }
+    calcularSaldoConsolidado() {
         return Number((this.valorInicial + this.calcularTotalVendas()).toFixed(2));
     }
-    fecharSessao(dataFechamento, valorFinalConferido) {
+    calcularTotalDigital() {
+        return Number(this.vendas.reduce((soma, venda) => soma + venda.calcularTotalDigital(), 0).toFixed(2));
+    }
+    getEsperadoNoFechamento() { return this.esperadoNoFechamento; }
+    getValorConferido() { return this.valorConferido; }
+    calcularDiferencaFechamento() {
+        return this.valorConferido !== undefined && this.esperadoNoFechamento !== undefined
+            ? Number((this.valorConferido - this.esperadoNoFechamento).toFixed(2)) : undefined;
+    }
+    fecharSessao(dataFechamento, valorFinalConferido, idResponsavel) {
         if (!this.estaAberta()) {
             throw new Error("Esta sessão de caixa já foi fechada.");
         }
@@ -66,16 +81,22 @@ export class SessaoCaixa {
             throw new Error("O valor conferido deve ser um número finito não negativo.");
         }
         this.dataFechamento = dataFechamento;
+        this.idResponsavelFechamento = idResponsavel;
         const saldoCalculado = this.calcularSaldoEsperado();
+        this.esperadoNoFechamento = saldoCalculado;
+        this.valorConferido = valorFinalConferido === undefined ? undefined : Number(valorFinalConferido.toFixed(2));
         this.valorFinal = valorFinalConferido !== undefined
             ? Number(valorFinalConferido.toFixed(2))
             : saldoCalculado;
         this.caixa.setStatusCaixa(StatusCaixa.LIVRE);
         return this.valorFinal;
     }
-    restaurarFechamento(dataFechamento, valorFinal) {
+    restaurarFechamento(dataFechamento, valorFinal, esperadoNoFechamento, valorConferido, idResponsavel) {
         this.dataFechamento = dataFechamento;
         this.valorFinal = valorFinal;
+        this.esperadoNoFechamento = esperadoNoFechamento;
+        this.valorConferido = valorConferido;
+        this.idResponsavelFechamento = idResponsavel;
         if (dataFechamento) {
             this.caixa.setStatusCaixa(StatusCaixa.LIVRE);
         }
@@ -146,7 +167,7 @@ export class PagamentoVenda {
     }
 }
 export class Venda {
-    constructor(idVenda, dataHoraVenda, sessaoCaixa, cliente) {
+    constructor(idVenda, dataHoraVenda, sessaoCaixa, cliente, operadorVenda) {
         this.valorTotal = 0;
         this.itens = [];
         this.pagamentos = [];
@@ -154,6 +175,8 @@ export class Venda {
         this.dataHoraVenda = dataHoraVenda;
         this.sessaoCaixa = sessaoCaixa;
         this.cliente = cliente;
+        this.operadorVenda = operadorVenda ?? sessaoCaixa.getFuncionario();
+        this.operadorRegistrado = operadorVenda !== undefined;
     }
     getId() {
         return this.idVenda;
@@ -179,10 +202,15 @@ export class Venda {
     getItens() {
         return [...this.itens];
     }
+    getOperadorVenda() { return this.operadorVenda; }
+    getIdOperadorRegistrado() { return this.operadorRegistrado ? this.operadorVenda.getIdFuncionario() : undefined; }
     getPagamentos() {
         return [...this.pagamentos];
     }
     adicionarItem(produto, qtdVenda, precoUnitario) {
+        produto.exigirAtivo();
+        if (produto.estaVencido())
+            throw new Error(`Produto vencido: ${produto.getDescricaoProduto()}. Venda bloqueada.`);
         if (!Number.isFinite(qtdVenda) || qtdVenda <= 0) {
             throw new Error("A quantidade vendida deve ser um número finito maior que zero.");
         }
@@ -217,10 +245,25 @@ export class Venda {
         return Number(soma.toFixed(2));
     }
     calcularTroco() {
-        const diferenca = this.calcularTotalPago() - this.valorTotal;
-        return diferenca > 0 ? Number(diferenca.toFixed(2)) : 0;
+        const diferenca = Math.max(0, Math.round(this.calcularTotalPago() * 100) - Math.round(this.valorTotal * 100));
+        return Math.min(diferenca, Math.round(this.calcularTotalDinheiro() * 100)) / 100;
+    }
+    calcularTotalDinheiro() {
+        return this.pagamentos.filter(p => p.getFormaPagamento().permiteTroco())
+            .reduce((soma, p) => soma + Math.round(p.getValorPago() * 100), 0) / 100;
+    }
+    calcularTotalDigital() {
+        return this.pagamentos.filter(p => !p.getFormaPagamento().permiteTroco())
+            .reduce((soma, p) => soma + Math.round(p.getValorPago() * 100), 0) / 100;
+    }
+    calcularDinheiroLiquido() {
+        return Number((this.calcularTotalDinheiro() - this.calcularTroco()).toFixed(2));
     }
     validarVendaParaFinalizacao() {
+        if (!this.operadorVenda.podeOperarCaixa())
+            throw new Error("Responsável da venda sem autorização para operar o caixa.");
+        if (!this.operadorVenda.ehGerente() && this.operadorVenda.getIdFuncionario() !== this.sessaoCaixa.getFuncionario().getIdFuncionario())
+            throw new Error("Sessão pertence a outro funcionário.");
         if (!this.sessaoCaixa.estaAberta()) {
             throw new Error("A sessão de caixa não está aberta.");
         }
@@ -229,6 +272,16 @@ export class Venda {
         }
         if (this.pagamentos.length === 0) {
             throw new Error("A venda precisa ter pelo menos uma forma de pagamento informada.");
+        }
+        if (Math.round(this.calcularTotalDigital() * 100) > Math.round(this.valorTotal * 100)) {
+            throw new Error("PIX e cartões não podem ultrapassar o total da venda. Troco é permitido apenas em dinheiro.");
+        }
+        for (const item of this.itens) {
+            item.getProduto().exigirAtivo();
+            if (item.getProduto().estaVencido())
+                throw new Error(`Produto vencido: ${item.getProduto().getDescricaoProduto()}. Venda bloqueada.`);
+            if (item.getQtdVenda() > item.getProduto().getQtdEstoque())
+                throw new Error("Estoque insuficiente na finalização da venda.");
         }
         if (this.calcularTotalPago() < this.valorTotal) {
             const faltante = (this.valorTotal - this.calcularTotalPago()).toFixed(2);

@@ -1,5 +1,6 @@
 import { StatusCaixa, TipoMovimentacao } from "./modelos/Entidades.js";
 import { GerenciadorSistema } from "./servicos/GerenciadorSistema.js";
+import { cnpjSintetico } from "./testes/DocumentosSinteticos.js";
 
 function afirmar(condicao: boolean, mensagem: string): void {
     if (!condicao) {
@@ -25,12 +26,13 @@ function executarTestesDeFluxo(): void {
     afirmar(sistema.listarFormasPagamento().length === 4, "Formas de pagamento carregadas.");
 
     // 2. Testar cadastro de nova categoria, fornecedor e produto
+    sistema.definirFuncionarioAtivo(1); // Gerente com Estoque/Compras/Equipe.
     const novaCat = sistema.cadastrarCategoria("Padaria e Confeitaria");
     const novoForn = sistema.cadastrarFornecedor(
-        "55.444.333/0001-22",
-        "Moinho Trigo Bom Ltda",
-        "contato@trigobom.com.br",
-        ["(19) 3211-0099"]
+        cnpjSintetico(),
+        "Fornecedor de Teste",
+        "contato@example.invalid",
+        []
     );
     const pao = sistema.cadastrarProduto(
         "7891000500999",
@@ -57,6 +59,7 @@ function executarTestesDeFluxo(): void {
     afirmar(pao.getCustoProduto() === 4.5, "Custo do produto atualizado para o último custo de compra (R$ 4,50).");
 
     // 4. Testar Venda com múltiplas formas de pagamento (Paga_Com) e Cliente identificado
+    sistema.definirFuncionarioAtivo(2); // Responsável habilitado da sessão demo.
     const sessaoAtiva = sistema.obterSessaoAbertaAtual();
     afirmar(sessaoAtiva !== undefined, "Existe uma sessão de caixa aberta.");
 
@@ -113,6 +116,7 @@ function executarTestesDeFluxo(): void {
     );
 
     // 8. Testar Ajuste de Estoque e Rastreabilidade do Funcionário
+    sistema.definirFuncionarioAtivo(3);
     sistema.realizarAjusteEstoque("7891000500999", TipoMovimentacao.SAIDA, 1, 3);
     afirmar(pao.getQtdEstoque() === 20, "Saída manual de estoque reduziu quantidade para 20.");
 

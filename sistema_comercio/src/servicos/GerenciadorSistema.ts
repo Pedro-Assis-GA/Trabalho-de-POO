@@ -1,5 +1,7 @@
 import {
     Caixa,
+    Documento,
+    ModuloSistema,
     Cargo,
     Categoria,
     Cliente,
@@ -12,6 +14,8 @@ import {
 } from "../modelos/Entidades.js";
 import {
     Compra,
+    CorrecaoValidade,
+    RegistroCorrecaoValidade,
     MovimentacaoEstoque,
     Produto
 } from "../modelos/EstoqueECompras.js";
@@ -43,6 +47,17 @@ export interface RastreabilidadeFuncionario {
     movimentacoesEstoque: MovimentacaoEstoque[];
 }
 
+export interface RegistroAutorizacaoCaixa {
+    modulo: ModuloSistema;
+    id: number; dataHora: string; idFuncionario: number; nomeFuncionario: string;
+    idGerente: number; nomeGerente: string; antes: boolean; depois: boolean; motivo: string;
+}
+
+export interface RegistroRemocao {
+    tipo: "PRODUTO" | "FORNECEDOR"; referencia: string; descricao: string;
+    idFuncionario: number; nomeFuncionario: string; dataHora: string;
+}
+
 export class GerenciadorSistema {
     private categorias: Categoria[] = [];
     private cargos: Cargo[] = [];
@@ -51,6 +66,11 @@ export class GerenciadorSistema {
     private produtos: Produto[] = [];
     private compras: Compra[] = [];
     private movimentacoes: MovimentacaoEstoque[] = [];
+    private correcoesValidade: CorrecaoValidade[] = [];
+    private autorizacoesCaixa: Readonly<RegistroAutorizacaoCaixa>[] = [];
+    private inicializandoDemo = false;
+    private remocoes: Readonly<RegistroRemocao>[] = [];
+    private sessoesSelecionadas: Record<string, number> = {};
     private caixas: Caixa[] = [];
     private sessoesCaixa: SessaoCaixa[] = [];
     private clientes: Cliente[] = [];
@@ -59,14 +79,39 @@ export class GerenciadorSistema {
 
     private funcionarioLogado: Funcionario | null = null;
     private observadores: ObservadorSistema[] = [];
+    private avisoPersistencia: string | null = null;
+    private ultimoEstadoPersistido: string | null | undefined;
+    private estadoCorrompido = false;
+    private conflitoPersistencia = false;
     private readonly chaveStorage = "sistema_comercio_poo_v1";
 
     constructor(carregarDadosPadrao: boolean = true) {
         if (carregarDadosPadrao) {
             const carregouDoStorage = this.carregarEstado();
             if (!carregouDoStorage) {
-                this.resetarDadosParaPadrao();
+                this.resetarDadosParaPadrao(false);
             }
+        }
+    }
+
+    public getAvisoPersistencia(): string | null { return this.avisoPersistencia; }
+
+    private verificarConcorrencia(): void {
+        if (this.conflitoPersistencia) throw new Error("Há alterações em outra aba. Recarregue antes de continuar.");
+        if (this.ultimoEstadoPersistido === undefined) return;
+        try {
+            if (globalThis.localStorage.getItem(this.chaveStorage) !== this.ultimoEstadoPersistido) {
+                this.conflitoPersistencia = true;
+            }
+        } catch {
+            this.avisoPersistencia = "Não foi possível conferir os dados no armazenamento. Esta operação foi bloqueada para preservar o último estado salvo. Tente novamente após recuperar o acesso.";
+            for (const obs of this.observadores) obs.atualizar("LEITURA_PERSISTENCIA_INDISPONIVEL");
+            throw new Error(this.avisoPersistencia);
+        }
+        if (this.conflitoPersistencia) {
+            this.avisoPersistencia = "Conflito: outra aba alterou os dados. Esta operação foi bloqueada. Recarregue a página para continuar.";
+            for (const obs of this.observadores) obs.atualizar("CONFLITO_PERSISTENCIA");
+            throw new Error(this.avisoPersistencia);
         }
     }
 
@@ -91,6 +136,7 @@ export class GerenciadorSistema {
     // ==================== AUTENTICAÇÃO E OPERADOR ATIVO ====================
 
     public autenticarFuncionario(idFuncionario: number, senha: string): Funcionario {
+        this.verificarConcorrencia();
         const func = this.buscarFuncionarioPorId(idFuncionario);
         if (!func.autenticar(senha)) {
             throw new Error("Senha incorreta para o funcionário selecionado.");
@@ -101,6 +147,7 @@ export class GerenciadorSistema {
     }
 
     public definirFuncionarioAtivo(idFuncionario: number): Funcionario {
+        this.verificarConcorrencia();
         const func = this.buscarFuncionarioPorId(idFuncionario);
         this.funcionarioLogado = func;
         this.notificar("FUNCIONARIO_ALTERADO", func);
@@ -111,9 +158,56 @@ export class GerenciadorSistema {
         return this.funcionarioLogado;
     }
 
+    public listarAutorizacoesCaixa(): RegistroAutorizacaoCaixa[] {
+        return this.listarAutorizacoes().filter(r => r.modulo === ModuloSistema.CAIXA);
+    }
+
+    public listarAutorizacoes(): RegistroAutorizacaoCaixa[] { return this.autorizacoesCaixa.map(r => ({ ...r })); }
+
+    public verificarAcessoModulo(modulo: ModuloSistema): void {
+        Cargo.validarModulo(modulo);
+        if (this.inicializandoDemo || this.funcionarios.length === 0) return;
+        if (!this.funcionarioLogado?.temAcessoModulo(modulo)) throw new Error(`Funcionário sem autorização para ${modulo}. Solicite a um gerente a liberação deste módulo em Equipe.`);
+    }
+
+    public alterarAutorizacaoCaixa(idFuncionario: number, permitir: boolean, motivo: string): void {
+        this.alterarAutorizacao(idFuncionario, ModuloSistema.CAIXA, permitir, motivo);
+    }
+
+    public alterarAutorizacao(idFuncionario: number, modulo: ModuloSistema, permitir: boolean, motivo: string): void {
+        this.verificarConcorrencia();
+        Cargo.validarModulo(modulo);
+        const gerente = this.funcionarioLogado;
+        if (!gerente?.ehGerente()) throw new Error("Somente um gerente pode conceder ou revogar autorizações.");
+        const alvo = this.buscarFuncionarioPorId(idFuncionario);
+        if (typeof motivo !== "string" || motivo.trim().length < 5 || motivo.trim().length > 500) throw new Error("Informe um motivo entre 5 e 500 caracteres para a autorização.");
+        const justificativa = motivo.trim();
+        const registro = Object.freeze({
+            id: this.gerarProximoId(this.autorizacoesCaixa.map(r => r.id)), dataHora: new Date().toISOString(), modulo,
+            idFuncionario, nomeFuncionario: alvo.getNomeFuncionario(), idGerente: gerente.getIdFuncionario(),
+            nomeGerente: gerente.getNomeFuncionario(), antes: alvo.temAutorizacaoModulo(modulo), depois: permitir, motivo: justificativa
+        });
+        alvo.alterarAutorizacaoModulo(modulo, permitir, gerente);
+        this.autorizacoesCaixa.unshift(registro);
+        this.notificar("AUTORIZACAO_CAIXA_ALTERADA", { ...registro });
+    }
+
+    public verificarAcessoCaixa(idSessao?: number, fechamento: boolean = false): Funcionario {
+        const ativo = this.funcionarioLogado;
+        if (!ativo) throw new Error("Selecione um funcionário no topo.");
+        if (ativo.ehGerente()) return ativo;
+        if (!ativo.podeOperarCaixa()) throw new Error("Funcionário sem autorização para operar o caixa. Solicite a autorização de um gerente em Equipe.");
+        if (idSessao !== undefined && this.buscarSessaoPorId(idSessao).getFuncionario().getIdFuncionario() !== ativo.getIdFuncionario()) {
+            throw new Error("Esta sessão pertence a outro funcionário. Selecione o responsável ou encerre a sessão antes de abrir a sua.");
+        }
+        return ativo;
+    }
+
     // ==================== CATEGORIAS ====================
 
     public cadastrarCategoria(nomeCategoria: string): Categoria {
+        this.verificarConcorrencia();
+        this.verificarAcessoModulo(ModuloSistema.ESTOQUE);
         const novoId = this.gerarProximoId(this.categorias.map((c) => c.getIdCategoria()));
         const nova = new Categoria(novoId, nomeCategoria);
         this.categorias.push(nova);
@@ -135,9 +229,11 @@ export class GerenciadorSistema {
 
     // ==================== CARGOS E FUNCIONÁRIOS ====================
 
-    public cadastrarCargo(nomeCargo: string, salarioBase: number): Cargo {
+    public cadastrarCargo(nomeCargo: string, salarioBase: number, permissoes: ModuloSistema[] = []): Cargo {
+        this.verificarConcorrencia();
+        this.verificarAcessoModulo(ModuloSistema.EQUIPE);
         const novoId = this.gerarProximoId(this.cargos.map((c) => c.getIdCargo()));
-        const novo = new Cargo(novoId, nomeCargo, salarioBase);
+        const novo = new Cargo(novoId, nomeCargo, salarioBase, permissoes);
         this.cargos.push(novo);
         this.notificar("CARGO_CADASTRADO", novo);
         return novo;
@@ -163,6 +259,12 @@ export class GerenciadorSistema {
         idCargo: number,
         telefones: string[]
     ): Funcionario {
+        this.verificarConcorrencia();
+        this.verificarAcessoModulo(ModuloSistema.EQUIPE);
+        const documento = Documento.validarCPF(cpf);
+        if (this.funcionarios.some(f => Documento.normalizar(f.getCpfFuncionario()) === documento)) {
+            throw new Error("Já existe um funcionário com este CPF.");
+        }
         const cargo = this.buscarCargoPorId(idCargo);
         const novoId = this.gerarProximoId(this.funcionarios.map((f) => f.getIdFuncionario()));
         const func = new Funcionario(novoId, cpf, nome, senha, dataAdmissao, cargo, telefones);
@@ -214,6 +316,12 @@ export class GerenciadorSistema {
         email: string,
         telefones: string[]
     ): Fornecedor {
+        this.verificarConcorrencia();
+        this.verificarAcessoModulo(ModuloSistema.COMPRAS);
+        const documento = Documento.validarCNPJ(cnpj);
+        if (this.fornecedores.some(f => Documento.normalizar(f.getCnpj()) === documento)) {
+            throw new Error("Já existe um fornecedor com este CNPJ.");
+        }
         const novoId = this.gerarProximoId(this.fornecedores.map((f) => f.getIdFornecedor()));
         const forn = new Fornecedor(novoId, cnpj, razaoSocial, email, telefones);
         this.fornecedores.push(forn);
@@ -221,8 +329,8 @@ export class GerenciadorSistema {
         return forn;
     }
 
-    public listarFornecedores(): Fornecedor[] {
-        return [...this.fornecedores];
+    public listarFornecedores(incluirRemovidos: boolean = false): Fornecedor[] {
+        return this.fornecedores.filter(f => incluirRemovidos || f.estaAtivo());
     }
 
     public buscarFornecedorPorId(idFornecedor: number): Fornecedor {
@@ -248,12 +356,21 @@ export class GerenciadorSistema {
         idsFornecedores: number[] = [],
         idFuncionarioResponsavel?: number
     ): Produto {
+        this.verificarConcorrencia();
+        this.verificarAcessoModulo(ModuloSistema.ESTOQUE);
         const existente = this.produtos.find((p) => p.getCodigoBarras() === codigoBarras.trim());
         if (existente) {
             throw new Error(`Já existe um produto com o código de barras "${codigoBarras}".`);
         }
         const categoria = this.buscarCategoriaPorId(idCategoria);
         const fornecedores = idsFornecedores.map((id) => this.buscarFornecedorPorId(id));
+        if (fornecedores.some(f => !f.estaAtivo())) throw new Error("Fornecedor removido não pode ser vinculado a novos produtos.");
+        const responsavel = idFuncionarioResponsavel !== undefined
+            ? this.buscarFuncionarioPorId(idFuncionarioResponsavel)
+            : this.funcionarioLogado || this.funcionarios[0];
+        if (qtdEstoqueInicial > 0 && !responsavel) {
+            throw new Error("Selecione um funcionário responsável pelo estoque inicial.");
+        }
         const produto = new Produto(
             codigoBarras,
             descricaoProduto,
@@ -268,26 +385,49 @@ export class GerenciadorSistema {
         );
         this.produtos.push(produto);
 
-        if (qtdEstoqueInicial > 0) {
-            const responsavel = idFuncionarioResponsavel
-                ? this.buscarFuncionarioPorId(idFuncionarioResponsavel)
-                : this.funcionarioLogado || this.funcionarios[0];
-            if (responsavel) {
+        if (qtdEstoqueInicial > 0 && responsavel) {
                 this.registrarMovimentacaoInterna(
                     TipoMovimentacao.ENTRADA,
                     qtdEstoqueInicial,
                     produto,
                     responsavel
                 );
-            }
         }
 
         this.notificar("PRODUTO_CADASTRADO", produto);
         return produto;
     }
 
-    public listarProdutos(): Produto[] {
-        return [...this.produtos];
+    public listarProdutos(incluirRemovidos: boolean = false): Produto[] {
+        return this.produtos.filter(p => incluirRemovidos || p.estaAtivo());
+    }
+
+    public listarRemocoes(): RegistroRemocao[] { return this.remocoes.map(r => ({ ...r })); }
+
+    private prepararRemocao(tipo: "PRODUTO" | "FORNECEDOR", referencia: string, descricao: string): Readonly<RegistroRemocao> {
+        const responsavel = this.funcionarioLogado;
+        if (!responsavel) throw new Error("Selecione o funcionário responsável.");
+        return Object.freeze({ tipo, referencia, descricao, idFuncionario: responsavel.getIdFuncionario(), nomeFuncionario: responsavel.getNomeFuncionario(), dataHora: new Date().toISOString() });
+    }
+
+    public removerProduto(codigo: string): void {
+        this.verificarConcorrencia();
+        this.verificarAcessoModulo(ModuloSistema.ESTOQUE);
+        const produto = this.buscarProdutoPorCodigo(codigo);
+        const registro = this.prepararRemocao("PRODUTO", codigo, produto.getDescricaoProduto());
+        produto.inativar();
+        this.remocoes.unshift(registro);
+        this.notificar("PRODUTO_REMOVIDO");
+    }
+
+    public removerFornecedor(id: number): void {
+        this.verificarConcorrencia();
+        this.verificarAcessoModulo(ModuloSistema.COMPRAS);
+        const fornecedor = this.buscarFornecedorPorId(id);
+        const registro = this.prepararRemocao("FORNECEDOR", String(id), fornecedor.getRazaoSocial());
+        fornecedor.inativar();
+        this.remocoes.unshift(registro);
+        this.notificar("FORNECEDOR_REMOVIDO");
     }
 
     public buscarProdutoPorCodigo(codigoBarras: string): Produto {
@@ -299,11 +439,33 @@ export class GerenciadorSistema {
     }
 
     public listarProdutosAbaixoDoMinimo(): Produto[] {
-        return this.produtos.filter((p) => p.abaixoDoEstoqueMinimo());
+        return this.produtos.filter((p) => p.estaAtivo() && p.abaixoDoEstoqueMinimo());
     }
 
     public listarProdutosVencidos(): Produto[] {
-        return this.produtos.filter((p) => p.estaVencido());
+        return this.produtos.filter((p) => p.estaAtivo() && p.getQtdEstoque() > 0 && p.estaVencido());
+    }
+
+    public listarCorrecoesValidade(): RegistroCorrecaoValidade[] {
+        return this.correcoesValidade.map(c => c.getRegistro());
+    }
+
+    public corrigirValidadeProduto(codigo: string, novaData: string, motivo: string, idFuncionario: number): RegistroCorrecaoValidade {
+        this.verificarConcorrencia();
+        this.verificarAcessoModulo(ModuloSistema.ESTOQUE);
+        const produto = this.buscarProdutoPorCodigo(codigo);
+        const funcionario = this.buscarFuncionarioPorId(idFuncionario);
+        const correcao = new CorrecaoValidade({
+            id: this.gerarProximoId(this.listarCorrecoesValidade().map(c => c.id)),
+            dataHora: new Date().toISOString(), codigoBarras: produto.getCodigoBarras(),
+            descricaoProduto: produto.getDescricaoProduto(), validadeAnterior: produto.getDataValidade(),
+            novaValidade: novaData, motivo, idFuncionario: funcionario.getIdFuncionario(),
+            nomeFuncionario: funcionario.getNomeFuncionario()
+        });
+        produto.corrigirDataValidade(novaData, motivo);
+        this.correcoesValidade.unshift(correcao);
+        this.notificar("VALIDADE_CORRIGIDA", correcao.getRegistro());
+        return correcao.getRegistro();
     }
 
     public realizarAjusteEstoque(
@@ -312,6 +474,8 @@ export class GerenciadorSistema {
         quantidade: number,
         idFuncionario: number
     ): MovimentacaoEstoque {
+        this.verificarConcorrencia();
+        this.verificarAcessoModulo(ModuloSistema.ESTOQUE);
         if (!Object.values(TipoMovimentacao).includes(tipo) || !Number.isFinite(quantidade)) {
             throw new Error("Tipo de movimentação ou quantidade inválida.");
         }
@@ -367,10 +531,13 @@ export class GerenciadorSistema {
         itensInput: ItemCompraInput[],
         dataCompra: string = this.formatarDataHoraAtual()
     ): Compra {
+        this.verificarConcorrencia();
+        this.verificarAcessoModulo(ModuloSistema.COMPRAS);
         if (!itensInput || itensInput.length === 0) {
             throw new Error("A compra precisa ter ao menos um produto.");
         }
         const fornecedor = this.buscarFornecedorPorId(idFornecedor);
+        if (!fornecedor.estaAtivo()) throw new Error("Fornecedor removido não permite novas compras.");
         const funcionario = this.buscarFuncionarioPorId(idFuncionario);
         const novoId = this.gerarProximoId(this.compras.map((c) => c.getIdCompra()));
 
@@ -378,6 +545,7 @@ export class GerenciadorSistema {
 
         for (const item of itensInput) {
             const produto = this.buscarProdutoPorCodigo(item.codigoBarras);
+            produto.exigirAtivo();
             compra.adicionarItem(produto, item.qtdCompra, item.custoUnitario);
         }
         // Valide toda a nota antes de alterar estoque, custos e rastreabilidade.
@@ -406,6 +574,8 @@ export class GerenciadorSistema {
     // ==================== CAIXAS E SESSÕES DE CAIXA ====================
 
     public cadastrarCaixa(numeroCaixa: number): Caixa {
+        this.verificarConcorrencia();
+        this.verificarAcessoModulo(ModuloSistema.CAIXA);
         if (this.caixas.some((c) => c.getNumeroCaixa() === numeroCaixa)) {
             throw new Error(`Já existe um caixa de número ${numeroCaixa}.`);
         }
@@ -433,11 +603,14 @@ export class GerenciadorSistema {
         idFuncionario: number,
         valorInicial: number
     ): SessaoCaixa {
+        this.verificarConcorrencia();
         const caixa = this.buscarCaixaPorId(idCaixa);
         if (caixa.getStatusCaixa() !== StatusCaixa.LIVRE) {
             throw new Error(`O Caixa #${caixa.getNumeroCaixa()} não está livre (${caixa.getStatusCaixa()}).`);
         }
         const funcionario = this.buscarFuncionarioPorId(idFuncionario);
+        const ativo = this.verificarAcessoCaixa();
+        if (ativo.getIdFuncionario() !== funcionario.getIdFuncionario()) throw new Error("A sessão deve ser aberta pelo funcionário ativo.");
         const novoId = this.gerarProximoId(this.sessoesCaixa.map((s) => s.getIdSessao()));
         const sessao = new SessaoCaixa(
             novoId,
@@ -447,19 +620,44 @@ export class GerenciadorSistema {
             caixa
         );
         this.sessoesCaixa.unshift(sessao);
+        this.sessoesSelecionadas[String(idFuncionario)] = sessao.getIdSessao();
         this.notificar("SESSAO_ABERTA", sessao);
         return sessao;
     }
 
     public fecharSessaoCaixa(idSessao: number, valorFinalConferido?: number): SessaoCaixa {
+        this.verificarConcorrencia();
         const sessao = this.buscarSessaoPorId(idSessao);
-        sessao.fecharSessao(this.formatarDataHoraAtual(), valorFinalConferido);
+        const responsavel = this.verificarAcessoCaixa(idSessao, true);
+        sessao.fecharSessao(this.formatarDataHoraAtual(), valorFinalConferido, responsavel.getIdFuncionario());
+        for (const id of Object.keys(this.sessoesSelecionadas)) if (this.sessoesSelecionadas[id] === idSessao) delete this.sessoesSelecionadas[id];
         this.notificar("SESSAO_FECHADA", sessao);
         return sessao;
     }
 
     public obterSessaoAbertaAtual(): SessaoCaixa | undefined {
         return this.sessoesCaixa.find((s) => s.estaAberta());
+    }
+
+    public listarSessoesAcessiveis(): SessaoCaixa[] {
+        const ativo = this.funcionarioLogado;
+        if (!ativo?.podeOperarCaixa()) return [];
+        return this.sessoesCaixa.filter(s => s.estaAberta() && (ativo.ehGerente() || s.getFuncionario().getIdFuncionario() === ativo.getIdFuncionario()));
+    }
+
+    public obterSessaoSelecionada(): SessaoCaixa | undefined {
+        const id = this.funcionarioLogado?.getIdFuncionario();
+        if (id === undefined) return undefined;
+        return this.listarSessoesAcessiveis().find(s => s.getIdSessao() === this.sessoesSelecionadas[String(id)]);
+    }
+
+    public selecionarSessaoCaixa(idSessao: number): void {
+        this.verificarConcorrencia();
+        const sessao = this.buscarSessaoPorId(idSessao);
+        const ativo = this.verificarAcessoCaixa(idSessao);
+        if (!sessao.estaAberta()) throw new Error("Selecione uma sessão aberta.");
+        this.sessoesSelecionadas[String(ativo.getIdFuncionario())] = idSessao;
+        this.notificar("SESSAO_SELECIONADA");
     }
 
     public listarSessoesCaixa(): SessaoCaixa[] {
@@ -477,6 +675,12 @@ export class GerenciadorSistema {
     // ==================== CLIENTES E FORMAS DE PAGAMENTO ====================
 
     public cadastrarCliente(nome: string, telefone: string, cpf: string): Cliente {
+        this.verificarConcorrencia();
+        this.verificarAcessoModulo(ModuloSistema.CAIXA);
+        const documento = Documento.validarCPF(cpf);
+        if (this.clientes.some(c => Documento.normalizar(c.getCpfCliente()) === documento)) {
+            throw new Error("Já existe um cliente com este CPF.");
+        }
         const novoId = this.gerarProximoId(this.clientes.map((c) => c.getIdCliente()));
         const cliente = new Cliente(novoId, nome, telefone, cpf);
         this.clientes.push(cliente);
@@ -516,14 +720,16 @@ export class GerenciadorSistema {
         pagamentosInput: PagamentoVendaInput[],
         idCliente?: number
     ): Venda {
+        this.verificarConcorrencia();
         const sessao = this.buscarSessaoPorId(idSessao);
+        const operador = this.verificarAcessoCaixa(idSessao);
         if (!sessao.estaAberta()) {
             throw new Error("A sessão de caixa informada está fechada. Abra uma sessão antes de vender.");
         }
         const cliente = idCliente ? this.buscarClientePorId(idCliente) : undefined;
         const novoId = this.gerarProximoId(this.vendas.map((v) => v.getIdVenda()));
 
-        const venda = new Venda(novoId, this.formatarDataHoraAtual(), sessao, cliente);
+        const venda = new Venda(novoId, this.formatarDataHoraAtual(), sessao, cliente, operador);
 
         for (const item of itensInput) {
             const produto = this.buscarProdutoPorCodigo(item.codigoBarras);
@@ -537,8 +743,7 @@ export class GerenciadorSistema {
 
         venda.validarVendaParaFinalizacao();
 
-        // Baixar estoque e gerar movimentações de SAIDA vinculadas ao operador da sessão
-        const operador = sessao.getFuncionario();
+        // Rastrear quem realizou a venda, separadamente de quem abriu a sessão.
         for (const item of venda.getItens()) {
             const prod = item.getProduto();
             prod.removerEstoque(item.getQtdVenda());
@@ -560,7 +765,17 @@ export class GerenciadorSistema {
         return [...this.vendas];
     }
 
-    public resetarDadosParaPadrao(): void {
+    public resetarDadosParaPadrao(substituirEstadoCorrompido: boolean = true): void {
+        this.verificarConcorrencia();
+        if (this.estadoCorrompido && substituirEstadoCorrompido) {
+            // A ação explícita da interface confirma a substituição; preserve o original antes.
+            const original = globalThis.localStorage.getItem(this.chaveStorage);
+            if (original !== null) {
+                globalThis.localStorage.setItem(this.chaveStorage + "_recuperacao_" + Date.now(), original);
+            }
+            this.ultimoEstadoPersistido = original;
+            this.estadoCorrompido = false;
+        }
         this.categorias = [];
         this.cargos = [];
         this.funcionarios = [];
@@ -568,13 +783,18 @@ export class GerenciadorSistema {
         this.produtos = [];
         this.compras = [];
         this.movimentacoes = [];
+        this.correcoesValidade = [];
+        this.autorizacoesCaixa = [];
+        this.remocoes = [];
+        this.sessoesSelecionadas = {};
         this.caixas = [];
         this.sessoesCaixa = [];
         this.clientes = [];
         this.formasPagamento = [];
         this.vendas = [];
         this.funcionarioLogado = null;
-        this.popularDadosIniciais();
+        this.inicializandoDemo = true;
+        try { this.popularDadosIniciais(); } finally { this.inicializandoDemo = false; }
         this.notificar("SISTEMA_RESETADO");
     }
 
@@ -592,54 +812,62 @@ export class GerenciadorSistema {
         const catLimpeza = new Categoria(4, "Higiene e Limpeza");
         this.categorias.push(catMercearia, catLaticinios, catBebidas, catLimpeza);
 
-        const cargoGerente = new Cargo(1, "Gerente Geral", 4200.0);
-        const cargoCaixa = new Cargo(2, "Operador de Caixa", 2150.0);
-        const cargoEstoquista = new Cargo(3, "Auxiliar de Estoque", 2250.0);
+        const cargoGerente = new Cargo(1, "Gerente Geral", 4200.0, [ModuloSistema.ESTOQUE, ModuloSistema.COMPRAS, ModuloSistema.EQUIPE]);
+        const cargoCaixa = new Cargo(2, "Operador de Caixa", 2150.0, [ModuloSistema.CAIXA]);
+        const cargoEstoquista = new Cargo(3, "Auxiliar de Estoque", 2250.0, [ModuloSistema.ESTOQUE, ModuloSistema.COMPRAS]);
         this.cargos.push(cargoGerente, cargoCaixa, cargoEstoquista);
 
+        // A demonstração usa identificadores não numéricos e nenhum contato real.
+        // Os identificadores de exemplo não passam pelas validações de cadastros novos.
+        const senhaDemo = () => globalThis.crypto?.randomUUID?.() ?? "";
         const funcGerente = new Funcionario(
             1,
-            "412.885.190-01",
-            "Carlos Mendes",
-            "1234",
+            "DEMO-FUNC-01",
+            "Gerente Demo",
+            senhaDemo(),
             "2025-02-10",
             cargoGerente,
-            ["(19) 99811-2233", "(19) 3456-7890"]
+            [],
+            "historico"
         );
         const funcCaixa = new Funcionario(
             2,
-            "329.741.608-55",
-            "Fernanda Oliveira",
-            "1234",
+            "DEMO-FUNC-02",
+            "Operadora Demo",
+            senhaDemo(),
             "2025-03-15",
             cargoCaixa,
-            ["(19) 99722-3344"]
+            [],
+            "historico"
         );
         const funcEstoquista = new Funcionario(
             3,
-            "518.902.314-22",
-            "Roberto Santos",
-            "1234",
+            "DEMO-FUNC-03",
+            "Estoquista Demo",
+            senhaDemo(),
             "2025-04-01",
             cargoEstoquista,
-            ["(19) 99633-4455"]
+            [],
+            "historico"
         );
         this.funcionarios.push(funcGerente, funcCaixa, funcEstoquista);
-        this.funcionarioLogado = funcGerente;
+        this.funcionarioLogado = funcCaixa;
 
         const fornAlimentos = new Fornecedor(
             1,
-            "12.345.678/0001-90",
-            "Distribuidora Paulista de Alimentos Ltda",
-            "vendas@distribuidorapaulista.com.br",
-            ["(11) 4002-8922", "(11) 98877-6655"]
+            "DEMO-FORN-01",
+            "Distribuidora Demo",
+            "vendas@example.invalid",
+            [],
+            "historico"
         );
         const fornLaticinios = new Fornecedor(
             2,
-            "98.765.432/0001-10",
-            "Laticínios Vale Verde S.A.",
-            "contato@valeverde.com.br",
-            ["(19) 3322-1100"]
+            "DEMO-FORN-02",
+            "Laticínios Demo",
+            "contato@example.invalid",
+            [],
+            "historico"
         );
         this.fornecedores.push(fornAlimentos, fornLaticinios);
 
@@ -717,8 +945,8 @@ export class GerenciadorSistema {
         const caixa3 = new Caixa(3, 3, StatusCaixa.MANUTENCAO);
         this.caixas.push(caixa1, caixa2, caixa3);
 
-        const cli1 = new Cliente(1, "Ana Clara Souza", "(19) 99111-2222", "123.456.789-00");
-        const cli2 = new Cliente(2, "Carlos Alberto Lima", "(19) 99333-4444", "234.567.890-11");
+        const cli1 = new Cliente(1, "Cliente Demo 1", "", "DEMO-CLI-01", "historico");
+        const cli2 = new Cliente(2, "Cliente Demo 2", "", "DEMO-CLI-02", "historico");
         this.clientes.push(cli1, cli2);
 
         // Registrar uma compra inicial e uma sessão de caixa aberta com 1 venda de exemplo
@@ -750,12 +978,17 @@ export class GerenciadorSistema {
     // ==================== PERSISTÊNCIA EM MEMÓRIA / LOCALSTORAGE ====================
 
     private salvarEstado(): void {
+        if (this.estadoCorrompido || this.conflitoPersistencia) return;
         if (typeof globalThis === "undefined" || !("localStorage" in globalThis)) {
+            this.avisoPersistencia = "Armazenamento indisponível. Alterações apenas na memória desta aba.";
             return;
         }
         try {
+            this.verificarConcorrencia();
             const payload = {
                 funcionarioAtivoId: this.funcionarioLogado?.getIdFuncionario(),
+                sessoesSelecionadas: { ...this.sessoesSelecionadas },
+                remocoes: this.listarRemocoes(),
                 categorias: this.categorias.map((c) => ({
                     idCategoria: c.getIdCategoria(),
                     nomeCategoria: c.getNomeCategoria()
@@ -763,7 +996,7 @@ export class GerenciadorSistema {
                 cargos: this.cargos.map((c) => ({
                     idCargo: c.getIdCargo(),
                     nomeCargo: c.getNomeCargo(),
-                    salarioBase: c.getSalarioBase()
+                    salarioBase: c.getSalarioBase(), permissoes: c.getPermissoes()
                 })),
                 funcionarios: this.funcionarios.map((f) => ({
                     idFuncionario: f.getIdFuncionario(),
@@ -772,17 +1005,21 @@ export class GerenciadorSistema {
                     senha: f.getSenha(),
                     dataAdmissao: f.getDataAdmissao(),
                     idCargo: f.getCargo().getIdCargo(),
+                    autorizadoNoCaixa: f.temAutorizacaoCaixa(),
+                    autorizacoesIndividuais: f.getAutorizacoesIndividuais(),
                     telefones: f.getTelefones()
                 })),
                 fornecedores: this.fornecedores.map((f) => ({
                     idFornecedor: f.getIdFornecedor(),
                     cnpj: f.getCnpj(),
                     razaoSocial: f.getRazaoSocial(),
+                    ativo: f.estaAtivo(),
                     email: f.getEmail(),
                     telefones: f.getTelefones()
                 })),
                 produtos: this.produtos.map((p) => ({
                     codigoBarras: p.getCodigoBarras(),
+                    ativo: p.estaAtivo(),
                     descricaoProduto: p.getDescricaoProduto(),
                     precoVenda: p.getPrecoVenda(),
                     custoProduto: p.getCustoProduto(),
@@ -819,6 +1056,8 @@ export class GerenciadorSistema {
                         custoUnitario: i.getCustoUnitario()
                     }))
                 })),
+                correcoesValidade: this.listarCorrecoesValidade(),
+                autorizacoesCaixa: this.listarAutorizacoes(),
                 movimentacoes: this.movimentacoes.map((m) => ({
                     idMovimentacao: m.getIdMovimentacao(),
                     dataHoraMov: m.getDataHoraMov(),
@@ -833,6 +1072,9 @@ export class GerenciadorSistema {
                     dataFechamento: s.getDataFechamento(),
                     valorInicial: s.getValorInicial(),
                     valorFinal: s.getValorFinal(),
+                    esperadoNoFechamento: s.getEsperadoNoFechamento(),
+                    valorConferido: s.getValorConferido(),
+                    idResponsavelFechamento: s.getIdResponsavelFechamento(),
                     idFuncionario: s.getFuncionario().getIdFuncionario(),
                     idCaixa: s.getCaixa().getIdCaixa()
                 })),
@@ -840,6 +1082,7 @@ export class GerenciadorSistema {
                     idVenda: v.getIdVenda(),
                     dataHoraVenda: v.getDataHoraVenda(),
                     idSessao: v.getSessaoCaixa().getIdSessao(),
+                    idOperadorVenda: v.getIdOperadorRegistrado(),
                     idCliente: v.getCliente()?.getIdCliente(),
                     itens: v.getItens().map((i) => ({
                         codigoBarras: i.getCodigoBarras(),
@@ -852,9 +1095,12 @@ export class GerenciadorSistema {
                     }))
                 }))
             };
-            globalThis.localStorage.setItem(this.chaveStorage, JSON.stringify(payload));
+            const serializado = JSON.stringify(payload);
+            globalThis.localStorage.setItem(this.chaveStorage, serializado);
+            this.ultimoEstadoPersistido = serializado;
+            this.avisoPersistencia = null;
         } catch {
-            // Ignora falha de storage em ambientes restritos
+            if (!this.conflitoPersistencia) this.avisoPersistencia = "Não foi possível salvar. Alterações estão apenas na memória desta aba e podem ser perdidas ao fechar ou recarregar. O último estado salvo foi preservado.";
         }
     }
 
@@ -864,14 +1110,15 @@ export class GerenciadorSistema {
         }
         try {
             const bruto = globalThis.localStorage.getItem(this.chaveStorage);
-            if (!bruto) return false;
+            this.ultimoEstadoPersistido = bruto;
+            if (bruto === null) return false;
             const dados = JSON.parse(bruto);
 
             this.categorias = dados.categorias.map(
                 (c: any) => new Categoria(c.idCategoria, c.nomeCategoria)
             );
             this.cargos = dados.cargos.map(
-                (c: any) => new Cargo(c.idCargo, c.nomeCargo, c.salarioBase)
+                (c: any) => new Cargo(c.idCargo, c.nomeCargo, c.salarioBase, Object.prototype.hasOwnProperty.call(c, "permissoes") ? c.permissoes : Cargo.permissoesLegadas(c.nomeCargo))
             );
             this.funcionarios = dados.funcionarios.map(
                 (f: any) =>
@@ -882,7 +1129,10 @@ export class GerenciadorSistema {
                         f.senha,
                         f.dataAdmissao,
                         this.buscarCargoPorId(f.idCargo),
-                        f.telefones
+                        f.telefones,
+                        "historico",
+                        f.autorizadoNoCaixa ?? false,
+                        Object.prototype.hasOwnProperty.call(f, "autorizacoesIndividuais") ? f.autorizacoesIndividuais : undefined
                     )
             );
             this.funcionarioLogado = this.funcionarios.find(f => f.getIdFuncionario() === dados.funcionarioAtivoId) || this.funcionarios[0] || null;
@@ -893,7 +1143,9 @@ export class GerenciadorSistema {
                         f.cnpj,
                         f.razaoSocial,
                         f.email,
-                        f.telefones
+                        f.telefones,
+                        "historico",
+                        f.ativo ?? true
                     )
             );
             this.produtos = dados.produtos.map(
@@ -908,14 +1160,15 @@ export class GerenciadorSistema {
                         p.estoqueMinimo,
                         this.buscarCategoriaPorId(p.idCategoria),
                         p.dataValidade,
-                        (p.idsFornecedores || []).map((id: number) => this.buscarFornecedorPorId(id))
+                        (p.idsFornecedores || []).map((id: number) => this.buscarFornecedorPorId(id)),
+                        p.ativo ?? true
                     )
             );
             this.caixas = dados.caixas.map(
                 (c: any) => new Caixa(c.idCaixa, c.numeroCaixa, c.statusCaixa)
             );
             this.clientes = dados.clientes.map(
-                (c: any) => new Cliente(c.idCliente, c.nomeCliente, c.telefoneCliente, c.cpfCliente)
+                (c: any) => new Cliente(c.idCliente, c.nomeCliente, c.telefoneCliente, c.cpfCliente, "historico")
             );
             this.formasPagamento = dados.formasPagamento.map(
                 (f: any) => new FormaPagamento(f.idForma, f.descricao)
@@ -936,6 +1189,12 @@ export class GerenciadorSistema {
                 }
                 return compra;
             });
+            this.correcoesValidade = (dados.correcoesValidade ?? []).map((c: RegistroCorrecaoValidade) => new CorrecaoValidade(c));
+            this.autorizacoesCaixa = (dados.autorizacoesCaixa ?? []).map((r: RegistroAutorizacaoCaixa) => Object.freeze({
+                id: r.id, dataHora: r.dataHora, idFuncionario: r.idFuncionario, nomeFuncionario: r.nomeFuncionario,
+                modulo: Cargo.validarModulo(Object.prototype.hasOwnProperty.call(r, "modulo") ? r.modulo : ModuloSistema.CAIXA),
+                idGerente: r.idGerente, nomeGerente: r.nomeGerente, antes: r.antes, depois: r.depois, motivo: r.motivo
+            }));
             this.movimentacoes = dados.movimentacoes.map(
                 (m: any) =>
                     new MovimentacaoEstoque(
@@ -953,15 +1212,16 @@ export class GerenciadorSistema {
                     s.dataAbertura,
                     s.valorInicial,
                     this.buscarFuncionarioPorId(s.idFuncionario),
-                    this.buscarCaixaPorId(s.idCaixa)
+                    this.buscarCaixaPorId(s.idCaixa),
+                    "historico"
                 );
-                sessao.restaurarFechamento(s.dataFechamento, s.valorFinal);
+                sessao.restaurarFechamento(s.dataFechamento, s.valorFinal, s.esperadoNoFechamento, s.valorConferido, s.idResponsavelFechamento);
                 return sessao;
             });
             this.vendas = dados.vendas.map((v: any) => {
                 const sessao = this.buscarSessaoPorId(v.idSessao);
                 const cli = v.idCliente ? this.buscarClientePorId(v.idCliente) : undefined;
-                const venda = new Venda(v.idVenda, v.dataHoraVenda, sessao, cli);
+                const venda = new Venda(v.idVenda, v.dataHoraVenda, sessao, cli, v.idOperadorVenda === undefined ? undefined : this.buscarFuncionarioPorId(v.idOperadorVenda));
                 for (const i of v.itens) {
                     venda.adicionarItemSemValidarEstoque(
                         this.buscarProdutoPorCodigo(i.codigoBarras),
@@ -976,12 +1236,30 @@ export class GerenciadorSistema {
                 return venda;
             });
             // A ordem histórica de sessões não pode sobrescrever o estado atual do caixa.
+            this.remocoes = (dados.remocoes ?? []).map((r: RegistroRemocao) => Object.freeze({ tipo: r.tipo, referencia: r.referencia, descricao: r.descricao, idFuncionario: r.idFuncionario, nomeFuncionario: r.nomeFuncionario, dataHora: r.dataHora }));
+            this.sessoesSelecionadas = {};
+            if (dados.sessoesSelecionadas !== undefined) {
+                if (!dados.sessoesSelecionadas || Array.isArray(dados.sessoesSelecionadas) || typeof dados.sessoesSelecionadas !== "object") throw new Error("Seleção de sessões inválida.");
+                for (const [funcionario, idSessao] of Object.entries(dados.sessoesSelecionadas)) {
+                    this.buscarFuncionarioPorId(Number(funcionario));
+                    const sessao = this.buscarSessaoPorId(Number(idSessao));
+                    if (sessao.estaAberta()) this.sessoesSelecionadas[funcionario] = sessao.getIdSessao();
+                }
+            } else {
+                // Legado: adotar somente uma sessão inequívoca do próprio responsável.
+                for (const f of this.funcionarios) {
+                    const proprias = this.sessoesCaixa.filter(s => s.estaAberta() && s.getFuncionario() === f);
+                    if (proprias.length === 1) this.sessoesSelecionadas[String(f.getIdFuncionario())] = proprias[0]!.getIdSessao();
+                }
+            }
             for (const caixa of this.caixas) {
                 const ocupada = this.sessoesCaixa.some(s => s.estaAberta() && s.getCaixa() === caixa);
                 if (ocupada) caixa.setStatusCaixa(StatusCaixa.OCUPADO);
             }
             return true;
         } catch {
+            this.estadoCorrompido = true;
+            this.avisoPersistencia = "Não foi possível carregar os dados salvos. O original foi preservado e não será sobrescrito automaticamente. A demonstração está apenas na memória. Recarregue após recuperar os dados ou use Restaurar Dados Demo para substituir com cópia de recuperação.";
             return false;
         }
     }
